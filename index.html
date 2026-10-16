@@ -136,6 +136,7 @@ html[data-lang="en"] [lang="ko"]{display:none!important}
 .works h2{display:flex;align-items:baseline;gap:8px}
 .works h2 span{color:var(--quiet);font-weight:400;font-size:12px}
 .works ul+h2{margin-top:48px}
+.works video.cardv{display:block;width:100%;aspect-ratio:4/3;object-fit:contain;background:#1f2123;margin-bottom:8px}
 .works small.with{color:var(--ink);font-weight:500}
 .work .line.with{margin-top:-16px;margin-bottom:22px;color:var(--ink);font-weight:500}
 .hero .scroll{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px;color:var(--ink);padding:6px 10px;background:rgba(240,241,240,.72);border-radius:999px}
@@ -345,10 +346,10 @@ const WORKS=[
  cap:{ko:["설치 전경 — 스페이스바, 서울","영상 스틸","6시간 동안 관찰한 아파트","TV를 응시하는 얼굴 없는 개인"],en:["Installation view — Space BA, Seoul","Video still","An apartment block observed for six hours","A faceless individual staring at a TV"]},
  spec:{ko:[["매체","영상 설치"],["전시","개인전, 스페이스바 세움몰이, 서울, 2020"]],en:[["Medium","Video installation"],["Exhibition","Solo show, Space BA, Seoul, 2020"]]},
  txt:{ko:["타자의 시선이 만드는 폭력은 개인의 문제를 넘어 사회 현상이 된다. 그 시선의 대표가 텔레비전이다. 작품은 미디어의 시선이 한 개인을 일반화했던 몇몇 사건을 모티브로 한다.","3분 동안 세 가지 시선이 한 화면에 놓인다. 6시간을 관찰한 아파트, TV를 응시하는 얼굴 없는 개인, 그리고 완벽히 대상화되고 규정되어 만들어진 10만 개의 가상 얼굴. 공인이란 존재하는가, 아니면 우리 모두가 공인인가를 묻는다."],en:["The violence of other people’s gaze outgrows the personal and becomes a social phenomenon, and television is its emblem. The work draws on incidents in which the media’s gaze generalised an individual.","For three minutes three gazes share one screen: an apartment block observed for six hours, a faceless person staring at a TV, and one hundred thousand synthetic faces, fully objectified and defined. It asks whether a ‘public figure’ exists at all, or whether we all are one."]}},
-{id:"gukje",homage:{"ko": "정점식", "en": "Jeong Jeom-sik"},cat:"facade",year:"2026",
+{id:"gukje",cardclip:true,homage:{"ko": "정점식", "en": "Jeong Jeom-sik"},cat:"facade",year:"2026",
  t:{"ko": "극재 정점식 3면 미디어아트", "en": "Jeong Jeom-sik (Gukje) — three-screen media work"},alt:{"ko": "제7회 극재 포럼, 계명대학교", "en": "7th Gukje Forum, Keimyung University"},
  md:{"ko": "3면 엣지블렌딩 영상, 5760×1200", "en": "Three-screen edge-blended video, 5760×1200"},
- clip:"gukje.mp4",clipcap:{"ko": "본편에서 15초 발췌", "en": "15-second excerpt"},
+ clip:"gukje.mp4",clipcap:{"ko": "본편(3면 5760×1200)에서 20초 발췌 — 소리 없음", "en": "20-second excerpt from the three-screen piece (5760×1200), silent"},
  img:["gukje_20.jpg","gukje_60.jpg","gukje_110.jpg"],
  cap:{"ko": ["드로잉 — 붓질과 붉은 점", "드로잉 — 긁어내며 드러나는 획", "콜라주 화면"], "en": ["Drawing — brushstrokes and red marks", "Drawing — strokes revealed by scraping", "Collage passage"]},
  spec:{"ko": [["매체", "3면 엣지블렌딩 영상(3면 × 10 m), 5760×1200, 30fps"], ["길이", "약 2분 18초 반복 / 인트로 1분"], ["행사", "제7회 극재 포럼 「New Ground: 기술, 창작 그리고 동시대 미술의 전환」, 계명대학교 대명캠퍼스 동산관 시청각실, 2026.5.13"], ["바탕", "극재 정점식 화백의 드로잉"]], "en": [["Medium", "Three-screen edge-blended video (3 × 10 m), 5760×1200, 30 fps"], ["Duration", "About 2 min 18 s loop / 1-min intro"], ["Event", "7th Gukje Forum, New Ground: Technology, Creation and the Turn in Contemporary Art, Dongsan Hall, Keimyung University, 13 May 2026"], ["Source", "Drawings by Jeong Jeom-sik (Gukje)"]]},
@@ -456,7 +457,8 @@ function media(w,cls,still){
 
 function renderIndex(){}
 function worksList(){
-  const card=x=>`<li><a href="#w/${x.id}"><img src="img/${x.img[0]}" alt="" loading="lazy" decoding="async"><b>${esc(x.t[LANG])}</b>${x.collab?`<small class="with">${LANG==="ko"?"함께":"with"} ${esc(x.collab[LANG])}</small>`:""}${x.homage?`<small class="with">${LANG==="ko"?"원작":"After"} ${esc(x.homage[LANG])}</small>`:""}<small>${yr(x)} · ${esc(x.md[LANG])}</small></a></li>`;
+  const thumb=x=>x.cardclip&&x.clip&&!RM?`<video class="cardv" src="clip/${x.clip}" poster="img/${x.img[0]}" muted loop playsinline autoplay preload="metadata" aria-hidden="true"></video>`:`<img src="img/${x.img[0]}" alt="" loading="lazy" decoding="async">`;
+  const card=x=>`<li><a href="#w/${x.id}">${thumb(x)}<b>${esc(x.t[LANG])}</b>${x.collab?`<small class="with">${LANG==="ko"?"함께":"with"} ${esc(x.collab[LANG])}</small>`:""}${x.homage?`<small class="with">${LANG==="ko"?"원작":"After"} ${esc(x.homage[LANG])}</small>`:""}<small>${yr(x)} · ${esc(x.md[LANG])}</small></a></li>`;
   const solo=LIST.filter(x=>!x.collab&&!x.homage),col=LIST.filter(x=>x.collab||x.homage);
   const sec=(id,ko,en,list)=>`<h2 id="${id}">${LANG==="ko"?ko:en}<span>${list.length}</span></h2><ul aria-labelledby="${id}">${list.map(card).join("")}</ul>`;
   return `<section class="works" id="works" aria-label="${LANG==="ko"?"작업":"Works"}">${sec("solo-h","개인 작업","Solo Works",solo)}${sec("collab-h","협업·오마주","Collaboration · Homage",col)}</section>`;
