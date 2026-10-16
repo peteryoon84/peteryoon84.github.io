@@ -1,0 +1,1171 @@
+<!doctype html>
+<html lang="ko">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8">
+<title>자유로운 흐름과 자유롭지 않은 벽 — 실시간</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* 9:16 세로 화면 하나(두꺼운 벽의 방 안 유막) + 오른쪽(휴대폰은 아래) 조종판. 화면 밖은 짙은 무대 */
+:root {
+  --ink: #e9ecef;
+  --ink-soft: #9aa3ad;
+  --panel: rgba(18, 21, 25, 0.80);
+  --line: rgba(233, 236, 239, 0.14);
+  --accent: #8fb8de;
+  --stage: #0b0c0e;
+  --chip: rgba(255, 255, 255, 0.05);
+  --f-ui: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --f-num: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { margin: 0; background: var(--stage); color: var(--ink); font-family: var(--f-ui); overflow: hidden; }
+#stage { position: fixed; inset: 0; right: 332px; display: grid; place-items: center; padding: 12px; box-sizing: border-box; }
+#frame { position: relative; }
+#cv { width: 100%; height: 100%; display: block; touch-action: none; border-radius: 4px; }
+#msg { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; font-size: 15px; line-height: 1.6; }
+#panel {
+  position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); right: 12px; bottom: 12px; width: 308px;
+  background: var(--panel); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; overflow: hidden;
+}
+#panel header { padding: 12px 16px 10px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+#panel h1 { margin: 0; font-size: 14px; font-weight: 600; }
+#toggle { display: none; }
+.scroll { overflow-y: auto; padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 14px; }
+.vers { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.ver { text-align: left; font: inherit; font-size: 12.5px; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--chip); color: var(--ink); cursor: pointer; display: flex; gap: 7px; align-items: baseline; min-width: 0; }
+.ver b { font-family: var(--f-num); font-weight: 500; color: var(--accent); }
+.ver[aria-pressed="true"] { border-color: var(--accent); background: rgba(143, 184, 222, 0.12); }
+#verHint { font-size: 11.5px; color: var(--ink-soft); margin: -6px 0 0; line-height: 1.5; }
+.ver:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.grp { display: flex; flex-direction: column; gap: 7px; }
+.grp h2 { margin: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: var(--ink-soft); }
+.row { display: grid; grid-template-columns: 74px 1fr 56px; align-items: center; gap: 8px; font-size: 12px; }
+.row output { font-family: var(--f-num); font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.btns button, #toggle { font: inherit; font-size: 12px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--chip); color: var(--ink); cursor: pointer; }
+.btns button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+textarea { width: 100%; box-sizing: border-box; height: 64px; font-family: var(--f-num); font-size: 10px; border: 1px solid var(--line); border-radius: 6px; background: rgba(0,0,0,0.3); color: var(--ink); }
+.note { font-size: 11px; line-height: 1.55; color: var(--ink-soft); margin: 0; }
+@media (max-width: 720px) {
+  #stage { right: 0; padding: 0; }
+  #panel { top: auto; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); width: auto; max-height: 46%; }
+  #panel.closed .scroll { display: none; }
+  #toggle { display: inline-block; padding: 3px 8px; }
+}
+</style>
+
+<div id="stage"><div id="frame">
+  <canvas id="cv"></canvas>
+  <div id="msg" hidden></div>
+</div></div>
+<aside id="panel">
+  <header><h1>자유로운 흐름과 자유롭지 않은 벽</h1><button id="toggle" type="button">접기</button></header>
+  <div class="scroll">
+    <div class="vers" id="vers"></div>
+    <p id="verHint"></p>
+    <div id="presets"></div>
+    <div id="sliders"></div>
+    <div class="grp">
+      <h2>보기</h2>
+      <div class="btns">
+        <button type="button" id="choreo" aria-pressed="false">60초 안무</button>
+        <button type="button" id="pause">멈춤</button>
+        <button type="button" id="camMode" aria-pressed="false">카메라</button>
+        <button type="button" id="resDown">화질 −</button>
+        <button type="button" id="resUp">화질 +</button>
+        <button type="button" id="copy">값 복사</button>
+      </div>
+      <textarea id="vals" readonly aria-label="지금 값(JSON)"></textarea>
+      <p class="note">마우스를 움직이면(휴대폰은 끌면) 빛 구슬이 따라가고, 막은 구슬을 피하고 구슬은 막에 되밀린다. 누르면 그 자리를 찔러 세포가 출렁이고 색 고리가 퍼진다. 덩어리가 벽을 밀면 벽이 불룩해지고(작용) 되밀어 덩어리를 누른다(반작용). 긴장 = 부피가 방에 눌린 정도.</p>
+    </div>
+  </div>
+</aside>
+
+<script>
+"use strict";
+// ───────── 버전 — 모두 방 안. 방은 앞이 열린 두꺼운 상자(9:16 세로)
+const DEF = {
+  boxX: 0.85, boxY: 1.5, boxZ: 0.6, wallT: 0.14, stiff: 0.6, wallLum: 0.03, pattern: 1, patScale: 5, stripW: 1.0, env: 1,
+  thk: 520, filmStr: 0.9, filmIOR: 1.6, under: 1.33, wrinkle: 0.6,
+  clarity: 0.92, ior: 1.5, disp: 0.045, tint: 0.35, milk: 0, coreAmt: 0, core: 0.5,
+  n: 12, merge: 0, vol: 1.0, gap: 0.03, round: 0.09, breathe: 0.5,
+  lights: 1, lightW: 1.0, orbR: 0.07, wash: 0.5, push: 0.5, speed: 1.0, expo: 1.1, loop: 10,
+  rough: 0.06, wallRough: 0.55, bloom: 0.06, vig: 0.25,
+  motion: "drift", lpath: "lissa", react: "avoid", turb: 0.4, micro: 0.25, smudge: 0.5,
+};
+const VERSIONS = [
+  { id: "Q5", name: "정호님 값 2 · 화질", hint: "Q4 + 광택 유리(거칠기 0.015) · 실제 유리 분산 · 막 난류/잔물결 끔 · 흰 벽", v: { boxX: 0.83, boxY: 1.57, boxZ: 0.3, wallT: 0.09, wallLum: 0.55, pattern: 1, patScale: 4, thk: 610, filmIOR: 1.47, under: 1.33, wrinkle: 0, clarity: 0.9, ior: 1.52, disp: 0.008, tint: 0.2, milk: 0, coreAmt: 0, core: 0.4, n: 7, merge: 1, vol: 0.87, gap: 0, round: 0.06, breathe: 1.45, lights: 3, lightW: 0.17, orbR: 0.048, wash: 1.2, push: 1.5, speed: 1, expo: 1.6, loop: 10, rough: 0.015, smudge: 0.2, turb: 0, micro: 0, wallRough: 1, bloom: 0.04, vig: 0 } },
+  { id: "Q4", name: "정호님 값 2 · 룩뎁", hint: "Q 를 물리로 다듬음 — 기름막 1.47 이 물(1.33) 위에 — 실제 기름띠 정도의 무지개 · 유리 그림자는 옅게 · 입구로 들어오는 빛", v: { boxX: 0.83, boxY: 1.57, boxZ: 0.3, wallT: 0.09, wallLum: 0.35, pattern: 1, patScale: 4, thk: 610, filmIOR: 1.47, under: 1.33, wrinkle: 0, clarity: 0.85, ior: 1.56, disp: 0.045, tint: 0.35, milk: 0, coreAmt: 0, core: 0.4, n: 7, merge: 1, vol: 0.87, gap: 0, round: 0.06, breathe: 1.45, lights: 3, lightW: 0.17, orbR: 0.048, wash: 2, push: 1.5, speed: 1, expo: 1.55, loop: 10, rough: 0.156, wallRough: 1, bloom: 0.06, vig: 0 } },
+  { id: "Q3", name: "정호님 값 3", hint: "10/16 정호님 값 3 · 세포 16개 세포분열 · 빛 셋 궤도 · 피함", v: { boxX: 0.85, boxY: 1.57, boxZ: 0.3, wallT: 0.09, wallLum: 0.32, pattern: 1, patScale: 3.8, thk: 1240, filmIOR: 1.63, under: 1.36, wrinkle: 0, clarity: 1, ior: 1.62, disp: 0.03, tint: 0, milk: 0, coreAmt: 0, core: 0, n: 16, merge: 1, vol: 0.79, gap: 0, round: 0.02, breathe: 1.5, lights: 3, lightW: 0.3, orbR: 0.038, wash: 2, push: 1.5, speed: 1.26, expo: 1.78, loop: 10, rough: 0, wallRough: 1, bloom: 0.164, vig: 0.33, motion: "mitosis", lpath: "orbit", react: "avoid", turb: 0, micro: 0, smudge: 0 } },
+  { id: "Q", name: "정호님 값 2", hint: "10/16 정호님이 고른 값 · 얕은 방 · 빛 셋 · 세포 7개 합침", v: { boxX: 0.83, boxY: 1.57, boxZ: 0.3, wallT: 0.09, wallLum: 0.35, pattern: 1, patScale: 4, thk: 610, filmIOR: 1.79, under: 1.14, wrinkle: 0, clarity: 0.85, ior: 1.56, disp: 0.045, tint: 0.35, milk: 0, coreAmt: 0, core: 0.4, n: 7, merge: 1, vol: 0.87, gap: 0, round: 0.06, breathe: 1.45, lights: 3, lightW: 0.17, orbR: 0.048, wash: 2, push: 1.5, speed: 1, expo: 1.55, loop: 10, rough: 0.156, wallRough: 1, bloom: 0.06, vig: 0 } },
+  { id: "P", name: "정호님 값", hint: "10/15 정호님이 고른 값(G 유리 유막 기반) · 띠 조명 없음 · 단단한 벽", v: { boxX: 1, boxY: 1.75, boxZ: 1, wallT: 0.14, wallLum: 0.82, pattern: 1, patScale: 8, thk: 1140, filmIOR: 1.55, under: 1.34, wrinkle: 0, clarity: 1, ior: 1.26, disp: 0.035, tint: 0.25, milk: 0, coreAmt: 0, core: 0.5, n: 8, merge: 1, vol: 0.95, gap: 0.03, round: 0.2, breathe: 0.5, lightW: 1, orbR: 0.07, wash: 0.5, push: 1.5, speed: 2.14, expo: 0.96, loop: 10, rough: 0, wallRough: 0.55, bloom: 0.06, vig: 0.25 } },
+  { id: "R", name: "눌린 세포", hint: "검은 방 · 세포 12개가 두꺼운 틀에 꽉 눌림 · 옅은 격자", v: {} },
+  { id: "T", name: "팽팽한 덩어리", hint: "좁은 흰 방에 갇혀 면이 납작 · 무른 벽이 불룩 · 격자가 휘어 보임", v: { n: 6, merge: 1, boxX: 0.62, boxY: 1.0, boxZ: 0.62, vol: 1.75, stiff: 0.2, wallLum: 0.78, pattern: 1, patScale: 7, stripW: 0.6, env: 0, thk: 640, round: 0.16, wrinkle: 0.2, wallT: 0.16 } },
+  { id: "F", name: "느슨한 유리", hint: "넓은 흰 방 · 줄무늬 벽 · 덩어리가 떠서 주름", v: { n: 7, merge: 1, boxX: 1.0, boxY: 1.75, boxZ: 1.0, vol: 0.8, wallLum: 0.8, pattern: 2, patScale: 6, stripW: 0.5, env: 0, thk: 700, wrinkle: 0.9, wallT: 0.1 } },
+  { id: "B", name: "거품 군집", hint: "세포 7개가 반쯤 합쳐짐 · 체크 벽", v: { n: 7, merge: 0.45, boxX: 0.8, boxY: 1.3, boxZ: 0.75, vol: 1.05, wallLum: 0.7, pattern: 3, patScale: 4, stripW: 0.7, env: 0, thk: 600 } },
+  { id: "G", name: "유리 유막", hint: "v1 · 밝은 방 · 격자(유리 연구 레퍼런스) · Mancini 유리", v: { n: 8, merge: 1, boxX: 1.0, boxY: 1.75, boxZ: 1.0, vol: 0.95, env: 0, wallLum: 0.82, pattern: 1, patScale: 8, stripW: 0.5, thk: 680, filmStr: 1.2, filmIOR: 1.65, disp: 0.035, tint: 0.25, round: 0.2, wrinkle: 0.3 } },
+  { id: "H", name: "노을 방", hint: "v1 노을 · 분홍빛 방 · 물 위의 막", v: { n: 8, merge: 1, boxX: 1.0, boxY: 1.75, boxZ: 1.0, vol: 0.95, env: 2, wallLum: 0.55, pattern: 2, patScale: 3, stripW: 0.4, thk: 820, filmStr: 1.3, filmIOR: 1.65, disp: 0.055, tint: 0.15, round: 0.2, wrinkle: 0.3 } },
+  { id: "I", name: "색 굴절", hint: "v1 · 벽 전체가 진한 색 그라데이션 · 유리가 굽혀 보임", v: { n: 8, merge: 1, boxX: 0.9, boxY: 1.6, boxZ: 0.9, vol: 1.0, env: 1, wallLum: 0.9, pattern: 4, patScale: 1.2, stripW: 0.2, thk: 600, filmStr: 1.2, filmIOR: 1.65, disp: 0.07, wash: 0.3, round: 0.2, wrinkle: 0.3 } },
+  { id: "S", name: "비눗방울", hint: "얇은 막만 · 속은 안 휨 · 회색 방 체크", v: { env: 0, n: 9, merge: 0, gap: 0, vol: 0.75, boxX: 1.0, boxY: 1.75, boxZ: 0.9, wallLum: 0.62, pattern: 3, patScale: 3, stripW: 0.5, ior: 1.0, disp: 0, tint: 0, clarity: 1, thk: 460, filmStr: 1.5, filmIOR: 1.33, under: 1.0, wrinkle: 0, round: 0.05, wash: 0.2, push: 0.8 } },
+  { id: "C", name: "사탕 유리", hint: "우윳빛 탁한 몸 · 속에 자홍 번짐 · 흰 방", v: { env: 0, n: 5, merge: 1, vol: 1.0, boxX: 0.9, boxY: 1.6, boxZ: 0.9, wallLum: 0.82, pattern: 0, stripW: 0.6, ior: 1.45, disp: 0.01, tint: 0.1, clarity: 0.9, milk: 0.55, coreAmt: 0.9, thk: 300, filmStr: 0.35, wrinkle: 0, round: 0.2, wash: 0.2 } },
+  { id: "A", name: "검은 유막", hint: "10/6 정본 계열 · 불투명 · 흰 방 · 단단한 벽", v: { n: 8, merge: 1, boxX: 0.75, boxY: 1.33, boxZ: 1.0, vol: 1.0, wallLum: 0.78, pattern: 0, stripW: 0.4, env: 0, stiff: 0.9, clarity: 0, thk: 680, filmStr: 0.9, filmIOR: 1.5, wash: 1.0, tint: 0, round: 0.14, wrinkle: 0.3 } },
+];
+const SL = [
+  ["방", [["boxX", "가로", 0.3, 2, 0.01, ""], ["boxY", "세로", 0.5, 3, 0.01, ""], ["boxZ", "깊이", 0.3, 2, 0.01, ""], ["wallT", "벽 두께", 0.02, 0.5, 0.005, ""], ["wallLum", "벽 밝기", 0, 1, 0.01, ""], ["pattern", "벽 무늬", 0, 4, 1, ""], ["patScale", "무늬 크기", 0.5, 14, 0.1, ""]]],
+  ["덩어리", [["n", "세포 수", 1, 16, 1, ""], ["merge", "합침", 0, 1, 0.01, ""], ["vol", "부피", 0.4, 2, 0.01, ""], ["gap", "틈", 0, 0.15, 0.001, ""], ["round", "모서리", 0.02, 0.4, 0.005, ""], ["breathe", "호흡", 0, 1.5, 0.01, ""]]],
+  ["막", [["thk", "막 두께", 150, 1600, 10, "nm"], ["filmIOR", "막 굴절률", 1.2, 2.4, 0.01, ""], ["under", "막 아래", 1.0, 1.6, 0.01, ""], ["wrinkle", "주름", 0, 2, 0.01, ""], ["turb", "막 난류", 0, 1.5, 0.01, ""], ["micro", "잔물결", 0, 1.5, 0.01, ""]]],
+  ["유리", [["clarity", "투명도", 0, 1, 0.01, ""], ["rough", "표면 거칠기", 0, 0.4, 0.002, ""], ["smudge", "거칠기 얼룩", 0, 1, 0.01, ""], ["ior", "굴절률", 1.0, 2.0, 0.01, ""], ["disp", "분산", 0, 0.12, 0.001, ""], ["tint", "흡수", 0, 1.5, 0.01, ""], ["milk", "탁함", 0, 1, 0.01, ""], ["coreAmt", "속 색 세기", 0, 1, 0.01, ""], ["core", "속 색", 0, 1, 0.01, ""]]],
+  ["빛 구슬·움직임", [["lights", "빛 개수", 1, 3, 1, ""], ["lightW", "빛 세기", 0, 3, 0.01, ""], ["orbR", "구슬 크기", 0.02, 0.2, 0.002, ""], ["wash", "열 흐름", 0, 2, 0.01, ""], ["push", "빛 피함", 0, 1.5, 0.01, ""], ["speed", "속도", 0, 3, 0.01, "×"]]],
+  ["카메라", [["expo", "노출", 0.3, 3, 0.01, ""], ["bloom", "블룸", 0, 0.3, 0.002, ""], ["vig", "비네팅", 0, 0.6, 0.01, ""], ["wallRough", "벽 거칠기", 0.1, 1, 0.01, ""]]],
+];
+const ENVN = ["밝은 스튜디오", "검은 스튜디오", "노을"];
+const PATN = ["없음", "격자", "줄무늬", "체크", "색 그라데이션"];
+let P = { ...DEF };
+let cur = "R";
+const $ = (id) => document.getElementById(id);
+const INTK = new Set(["thk", "n", "lights"]);
+const fmt = (k, x) => k === "env" ? ENVN[Math.round(x)] : k === "pattern" ? PATN[Math.round(x)] : INTK.has(k) ? String(Math.round(x)) : (+x).toFixed(Math.abs(x) < 0.1 && x !== 0 ? 3 : 2);
+function buildUI() {
+  for (const ver of VERSIONS) {
+    const b = document.createElement("button"); b.type = "button"; b.className = "ver"; b.id = "ver-" + ver.id;
+    b.innerHTML = `<b>${ver.id}</b><span>${ver.name}</span>`; b.title = ver.hint;
+    b.onclick = () => applyVersion(ver.id); $("vers").appendChild(b);
+  }
+  for (const [gname, rows] of SL) {
+    const g = document.createElement("div"); g.className = "grp"; g.innerHTML = `<h2>${gname}</h2>`;
+    for (const [k, label, mn, mx, st] of rows) {
+      const r = document.createElement("label"); r.className = "row";
+      r.innerHTML = `<span>${label}</span><input type="range" id="s-${k}" min="${mn}" max="${mx}" step="${st}"><output id="o-${k}"></output>`;
+      g.appendChild(r);
+      r.querySelector("input").addEventListener("input", (e) => { P[k] = +e.target.value; syncOut(); });
+    }
+    $("sliders").appendChild(g);
+  }
+  $("s-n").addEventListener("change", () => resetCells());
+  $("toggle").onclick = () => { const p = $("panel"); p.classList.toggle("closed"); $("toggle").textContent = p.classList.contains("closed") ? "펼치기" : "접기"; };
+  if (matchMedia("(max-width: 720px)").matches) { $("panel").classList.add("closed"); $("toggle").textContent = "펼치기"; }
+}
+const PRESETS = [
+  ["움직임 패턴", "motion", [["drift", "유영"], ["fission", "분열·합체"], ["breathe", "호흡"], ["swirl", "소용돌이"], ["tremor", "경련"], ["condense", "응결"], ["disperse", "확산"], ["mitosis", "세포분열"], ["data", "데이터 분할"]]],
+  ["빛 경로", "lpath", [["lissa", "리사주"], ["orbit", "궤도"], ["scan", "스캔"], ["spiral", "나선"], ["patrol", "자율 순찰"]]],
+  ["빛 반응", "react", [["avoid", "피함"], ["attract", "끌림"], ["engulf", "감쌈"]]],
+];
+function buildPresets() {
+  for (const [title, key, items] of PRESETS) {
+    const g = document.createElement("div"); g.className = "grp"; g.innerHTML = `<h2>${title}</h2>`;
+    const row = document.createElement("div"); row.className = "btns";
+    for (const [val, label] of items) {
+      const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.id = `pr-${key}-${val}`;
+      b.onclick = () => { P[key] = val; syncOut(); };
+      row.appendChild(b);
+    }
+    g.appendChild(row); $("presets").appendChild(g);
+  }
+}
+function syncOut() {
+  for (const [, key, items] of PRESETS) for (const [val] of items) { const b = $(`pr-${key}-${val}`); if (b) b.setAttribute("aria-pressed", String(P[key] === val)); }
+  for (const [, rows] of SL) for (const [k, , , , , unit] of rows) { $("s-" + k).value = P[k]; $("o-" + k).textContent = fmt(k, P[k]) + unit; }
+  $("vals").value = JSON.stringify({ schema: "yumak_webgpu_v4", version: cur, values: P });
+}
+function applyVersion(id) {
+  cur = id; P = { ...DEF, ...VERSIONS.find((x) => x.id === id).v };
+  for (const ver of VERSIONS) $("ver-" + ver.id).setAttribute("aria-pressed", ver.id === id ? "true" : "false");
+  const v = VERSIONS.find((x) => x.id === id); $("verHint").textContent = v.hint;
+  resetCells(); Rnow = []; hist.length = 0; for (const w of walls) { w.w = 0; w.v = 0; w.amp = 0; }
+  resetHist = true; syncOut();
+}
+
+// ───────── 물리: 세포 ↔ 세포 · 세포 ↔ 벽(벽도 움직인다) · 세포 ↔ 빛 구슬. 모든 힘은 짝으로(작용·반작용)
+const NMAX = 16;
+// 벽 5면(앞은 열림): 바깥 방향 법선, 축
+const FACES = [{ n: [-1, 0, 0], a: 0 }, { n: [1, 0, 0], a: 0 }, { n: [0, -1, 0], a: 1 }, { n: [0, 1, 0], a: 1 }, { n: [0, 0, -1], a: 2 }];
+const walls = FACES.map(() => ({ w: 0, v: 0, amp: 0, cu: 0, cv: 0, rad: 0.3, press: 0 }));
+const faceUV = (f, p) => f < 2 ? [p[1], p[2]] : f < 4 ? [p[0], p[2]] : [p[0], p[1]];
+let cells = [];
+function rnd(s) { let x = s; return () => (x = (x * 16807) % 2147483647) / 2147483647; }
+function resetCells() {
+  const r = rnd(11); cells = [];
+  for (let i = 0; i < NMAX; i++) cells.push({ p: [(r() - 0.5) * P.boxX, (r() - 0.5) * P.boxY, (r() - 0.5) * P.boxZ * 0.5], v: [0, 0, 0], s: 0.82 + r() * 0.36, ph: [r() * 6.28, r() * 6.28, r() * 6.28], k: [1 + (i % 3), 1 + ((i + 1) % 2), 1 + ((i + 2) % 3)], ten: 0 });
+}
+function radiusOf(c, n, th) { const V = 8 * P.boxX * P.boxY * P.boxZ; return c.s * P.vol * 0.62 * (1 - 0.38 * P.merge) * Math.cbrt(V / n) *   // 합친 덩어리는 마디가 겹치니 작게
+     (1 + P.breathe * 0.035 * Math.sin(2 * th + c.ph[0])) *
+     (1 + 0.28 * (c.ten || 0)); }   // 액체는 부피가 보존된다: 벽·이웃에 잘려 나간 만큼 남은 쪽이 불룩해진다(안 압력↑ → 벽을 더 민다)
+// ───────── 60초 안무: 방이 줄었다 커졌다 — 방이 조이면 덩어리가 눌려 막이 늘어나 얇아지고(작용), 풀리면 튕겨 나온다(반작용)
+// [초, 가로배율, 세로배율, 깊이배율] — 사이는 부드럽게(코사인) 잇는다. 처음과 끝이 같아 60초 루프
+const CHOREO = [
+  [0, 1, 1, 1], [8, 1, 1, 1],                          // 쉼: 떠 있는 덩어리, 막 색이 고요히 흐름
+  [20, 0.72, 0.72, 0.72], [24, 0.70, 0.70, 0.70],      // 천천히 조임 → 벽에 닿아 납작, 막이 얇아짐 · 버팀
+  [26, 1.08, 1.08, 1.08], [28, 1, 1, 1],               // 갑자기 풀림 → 튕겨 나오며 출렁
+  [33, 0.62, 1.06, 1], [37, 0.62, 1.06, 1],            // 좌우만 조임 → 옆으로 짜여 세로로 길어짐(부피 보존)
+  [42, 1, 0.66, 0.95], [45, 1, 0.66, 0.95],            // 위아래만 조임 → 아래로 눌려 납작
+  [50, 0.68, 0.68, 0.68], [53, 0.68, 0.68, 0.68],      // 사방 가장 깊게 → 긴장 최대
+  [60, 1, 1, 1],                                       // 천천히 원래대로
+];
+const CHOREO_MAX = 1.08;
+let choreoOn = false, chT = 0;
+function choreoScale(t) {
+  t = ((t % 60) + 60) % 60;
+  let i = 0; while (i < CHOREO.length - 2 && CHOREO[i + 1][0] <= t) i++;
+  const a = CHOREO[i], b = CHOREO[i + 1], u = (t - a[0]) / Math.max(1e-6, b[0] - a[0]), e = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, u)));
+  const s = [1, 2, 3].map((k) => a[k] + (b[k] - a[k]) * e);
+  const hold = (t > 20 && t < 24) || (t > 50 && t < 53) ? 0.012 * Math.sin(2 * Math.PI * 1.5 * t) : 0;   // 조인 채 버틸 때 미세한 맥동
+  return s.map((x) => x + hold);
+}
+let EB = [1, 1, 1];
+const Bof = () => EB;
+function faceD(f) { return Bof()[FACES[f].a] + walls[f].w; }
+// 움직임 패턴: 마디 하나가 받는 힘(가운데로 모으는 힘 + 패턴별 힘). 모두 힘으로만 움직인다
+function motionForce(i, c, th, n, R) {
+  const m = choreoOn ? "drift" : P.motion, B = EB, f = [0, 0, 0];
+  const pull = (k) => { for (let a = 0; a < 3; a++) f[a] += -c.p[a] * k; };
+  const wander = (amp) => { for (let a = 0; a < 3; a++) f[a] += amp * Math.sin(c.k[a] * th + c.ph[a]); };
+  const toward = (A, k) => { for (let a = 0; a < 3; a++) f[a] += (A[a] - c.p[a]) * k; };
+  const base = n > 1 ? (choreoOn ? 0.55 : 0.12) : 1.0;
+  switch (m) {
+    case "fission": { const s = Math.max(0, Math.sin(2 * th)); toward([(i % 2 ? 1 : -1) * 0.45 * B[0] * s, 0, 0], 2.5); wander(0.15); break; }
+    case "breathe": { const l = Math.hypot(...c.p) || 1; const k = 1.6 * Math.sin(3 * th); for (let a = 0; a < 3; a++) f[a] += c.p[a] / l * k; pull(0.5); break; }
+    case "swirl": { f[0] += -c.p[2] * 1.8 - c.p[1] * 0.6; f[2] += c.p[0] * 1.8; f[1] += c.p[0] * 0.6; pull(0.45); break; }
+    case "tremor": { for (let a = 0; a < 3; a++) f[a] += (Math.random() - 0.5) * 9; pull(0.4); break; }
+    case "condense": { pull(2.2); break; }
+    case "disperse": { for (let a = 0; a < 3; a++) f[a] += c.p[a] * 0.5; wander(0.35); break; }
+    case "mitosis": { const cyc = (th / (2 * Math.PI) * 3) % 3, lv = Math.floor(cyc), ph = cyc - lv, g = 1 << lv, ang = (i % g) / g * 2 * Math.PI, sep = 0.42 * lv * Math.sin(Math.PI * ph);
+      toward([Math.cos(ang) * sep * B[0], Math.sin(ang) * sep * B[1], 0], 2.5); break; }
+    case "data": { const q = 0.32 * Math.min(B[0], B[1]); toward(c.p.map((x) => Math.round(x / q) * q), 6); wander(0.2); break; }
+    default: { pull(base); wander(n > 1 ? 0.35 : 0.14); }
+  }
+  return f;
+}
+function stepWorld(dt, th, orbT) {
+  const n = Math.round(P.n);
+  const live = cells.slice(0, n); const R = live.map((c) => radiusOf(c, n, th));
+  const sub = 4, h = dt / sub;
+  const kWall = 40 + 520 * P.stiff;          // 벽 용수철
+  for (let s = 0; s < sub; s++) {
+    const F = live.map(() => [0, 0, 0]);
+    for (const w of walls) { w.press = 0; w.su = 0; w.sv = 0; w.sr = 0; }
+    const orbFs = orbs.map(() => [0, 0, 0]);
+    const cen = [0, 1, 2].map((a) => live.reduce((m, c) => m + c.p[a], 0) / n);
+    // 갈라짐: 빛 2개면 두 무리(좌우), 3개면 세 무리(삼각) — 무리는 빛 사이 빈자리로 비켜 가고, 다른 무리와는 붙잡지 않는다
+    const sp2 = orbs[1].on, sp3 = orbs[2].on, B_ = EB;
+    const anchor = (i) => {
+      const a2 = (i % 2 === 0) ? [-0.48 * B_[0], 0.05 * B_[1], 0] : [0.48 * B_[0], -0.05 * B_[1], 0];
+      const g = i % 3, a3 = g === 0 ? [-0.46 * B_[0], 0.40 * B_[1], 0] : g === 1 ? [0.46 * B_[0], 0.40 * B_[1], 0] : [0, -0.46 * B_[1], 0];
+      return [0, 1, 2].map((a) => a2[a] + (a3[a] - a2[a]) * sp3);
+    };
+    const splitAmt = Math.max(sp2, sp3);
+    live.forEach((c, i) => {
+      if (splitAmt > 0.01) { const A = anchor(i); for (let a = 0; a < 3; a++) F[i][a] += (A[a] - c.p[a]) * 3.2 * splitAmt; }
+      const mf = motionForce(i, c, th, n, R[i]);
+      for (let a = 0; a < 3; a++) F[i][a] += mf[a] * (1 - splitAmt);
+      // 벽: 겹친 만큼 세포를 안으로(반작용), 같은 크기로 벽을 밖으로(작용)
+      FACES.forEach((fc, f) => {
+        const ov = fc.n[0] * c.p[0] + fc.n[1] * c.p[1] + fc.n[2] * c.p[2] + R[i] * 0.92 - faceD(f);
+        if (ov > 0) {
+          for (let a = 0; a < 3; a++) F[i][a] -= fc.n[a] * ov * 60;
+          const wgt = ov; const uv = faceUV(f, c.p);
+          walls[f].press += ov; walls[f].su += uv[0] * wgt; walls[f].sv += uv[1] * wgt; walls[f].sr += R[i] * wgt;
+        }
+      });
+      // 앞(입구): 물리에서만 막는다 — 마디 중심이 방 밖으로 빠져나가지 않게(모양은 입구 쪽으로 볼록해질 수 있음)
+      { const ovf = c.p[2] + R[i] * 0.5 - EB[2]; if (ovf > 0) F[i][2] -= ovf * 60; }
+      // 빛 구슬: 막은 구슬을 피하고(빛 피함), 구슬은 막에 되밀린다
+      orbs.forEach((o, ko) => {
+        if (o.on <= 0.01) return;
+        const d = c.p.map((x, a) => x - o.p[a]); const l = Math.hypot(...d) || 1;
+        const reach = R[i] + P.orbR + 0.5 * P.push;
+        if (P.react === "avoid" || choreoOn) {
+          if (l < reach) { const k = o.on * P.push * 7 * (1 - l / reach) ** 2; for (let a = 0; a < 3; a++) { F[i][a] += d[a] / l * k; orbFs[ko][a] -= d[a] / l * k * 0.6; } }
+        } else {
+          // 끌림: 빛 쪽으로 당겨지되 표면에서 멈춤 · 감쌈: 더 깊이 당겨 빛을 품는다(가까우면 되밀어 겹치지 않게)
+          const stop = P.react === "engulf" ? R[i] * 0.35 : R[i] + P.orbR + 0.02, far = R[i] + 1.4;
+          if (l > stop && l < far) { const k = o.on * P.push * 2.2 * (l - stop) / (far - stop) * (1 - (l - stop) / (far - stop)) * 4; for (let a = 0; a < 3; a++) { F[i][a] -= d[a] / l * k; orbFs[ko][a] += d[a] / l * k * 0.3; } }
+          if (l < stop) { const k = o.on * 8 * (stop - l); for (let a = 0; a < 3; a++) F[i][a] += d[a] / l * k; }
+        }
+      });
+    });
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const d = live[j].p.map((x, a) => x - live[i].p[a]); const l = Math.hypot(...d) || 1e-4; const ov = (R[i] + R[j]) * (0.86 - 0.4 * P.merge) - l;
+      if (ov > 0) for (let a = 0; a < 3; a++) { const f = d[a] / l * ov * 24; F[i][a] -= f; F[j][a] += f; }
+      // 표면장력: 가까운 마디끼리만 붙잡는다(멀어지면 놓아준다) → 빛이 가르면 조각은 조각대로 뭉치고, 다시 닿으면 합쳐진다
+      const rest = (R[i] + R[j]) * (0.86 - 0.4 * P.merge), reach2 = (R[i] + R[j]) * 1.25;
+      const same = (sp3 > 0.5 ? (i % 3 === j % 3) : (i % 2 === j % 2)) ? 1 : 1 - splitAmt;   // 다른 무리끼리는 갈라지는 만큼 놓아준다
+      if (l > rest && l < reach2) { const k = 7 * P.merge * same * (l - rest) * (1 - (l - rest) / (reach2 - rest)); for (let a = 0; a < 3; a++) { const f = d[a] / l * k; F[i][a] += f; F[j][a] -= f; } }
+    }
+    live.forEach((c, i) => { for (let a = 0; a < 3; a++) { c.v[a] = (c.v[a] + F[i][a] * h) * Math.exp(-3.5 * h); c.p[a] += c.v[a] * h; } });
+    // 벽: 받은 압력으로 밀려나고 용수철로 돌아온다 — 국소 불룩함은 닿은 자리(무게중심)에
+    walls.forEach((w) => { w.w = 0; w.v = 0; w.amp = 0; });   // 단단한 벽(정호님 10/15: 출렁이지 않게)
+    if (false) walls.forEach((w) => {
+      const acc = w.press * 45 - kWall * w.w - 9 * w.v;
+      w.v += acc * h; w.w = Math.max(-0.01, w.w + w.v * h);
+      if (w.press > 1e-5) { w.cu += (w.su / w.press - w.cu) * Math.min(1, 12 * h); w.cv += (w.sv / w.press - w.cv) * Math.min(1, 12 * h); w.rad += (w.sr / w.press * 0.95 - w.rad) * Math.min(1, 12 * h); }
+      const target = Math.min(0.22, w.press * (1 - P.stiff) * 0.7);
+      w.amp += (target - w.amp) * Math.min(1, 8 * h);
+    });
+    // 빛 구슬: 손/경로가 끌고, 막이 되민다, 방 안에 머문다
+    orbs.forEach((o, ko) => {
+      const T_ = orbT[ko];
+      const back = ko === 0 ? 8 : 1.3;   // 가르는 빛(둘째·셋째)은 덩어리에 거의 밀리지 않고 파고든다
+      for (let a = 0; a < 3; a++) { o.v[a] += ((T_[a] - o.p[a]) * 38 + orbFs[ko][a] * back) * h; o.v[a] *= Math.exp(-9 * h); o.p[a] += o.v[a] * h; }
+      o.p = clampRoom(o.p, P.orbR + 0.02);
+    });
+  }
+  live.forEach((c, i) => {
+    let comp = 0;
+    for (let j = 0; j < n; j++) if (j !== i) { const l = Math.hypot(...live[j].p.map((x, a) => x - c.p[a])); comp += Math.max(0, (R[i] + R[j]) * (1 - 0.4 * P.merge) - l) / R[i] * 0.5; }   // 합친 덩어리는 원래 겹쳐 있는 만큼은 긴장이 아니다
+    FACES.forEach((fc, f) => { comp += Math.max(0, fc.n[0] * c.p[0] + fc.n[1] * c.p[1] + fc.n[2] * c.p[2] + R[i] - faceD(f)) / R[i]; });
+    c.ten = Math.min(1, comp * 0.9);
+  });
+  return R;
+}
+function clampRoom(q, m) { return [Math.max(-faceD(0) + m, Math.min(faceD(1) - m, q[0])), Math.max(-faceD(2) + m, Math.min(faceD(3) - m, q[1])), Math.max(-faceD(4) + m, Math.min(P.boxZ + 0.4, q[2]))]; }
+function sdfCPU(q, R) {
+  let d = 1e9; const n = Math.round(P.n);
+  for (let i = 0; i < n; i++) { const c = cells[i]; d = Math.min(d, Math.hypot(q[0] - c.p[0], q[1] - c.p[1], q[2] - c.p[2]) - R[i]); }
+  return Math.max(d, -faceD(0) - q[0], q[0] - faceD(1), -faceD(2) - q[1], q[1] - faceD(3), -faceD(4) - q[2]);
+}
+
+// ───────── WGSL
+const WGSL = /* wgsl */`
+struct U { v: array<vec4f, 72> };
+@group(0) @binding(0) var<uniform> u: U;
+fn cell(i: i32) -> vec4f { return u.v[9 + i]; }
+// 확률 표본(프레임마다 다름 → TAA 가 쌓아 매끈하게): 미세면 방향
+var<private> gPix: vec2f;
+var<private> gN: f32;
+fn rand() -> f32 { gN += 1.0; return fract(sin(dot(vec2f(gPix.x + gN * 17.31, gPix.y + u.v[64].z * 13.7 + gN * 3.1), vec2f(12.9898, 78.233))) * 43758.5453); }
+// GGX(언리얼과 같은 미세면 분포)에서 반쪽 벡터 표본
+fn ggxH(n: vec3f, a: f32) -> vec3f {
+  let u1 = rand(); let u2 = rand(); let ph = 6.2832 * u1;
+  let ct = sqrt((1.0 - u2) / (1.0 + (a * a - 1.0) * u2)); let st = sqrt(max(1.0 - ct * ct, 0.0));
+  let t = normalize(select(cross(n, vec3f(1.0, 0.0, 0.0)), cross(n, vec3f(0.0, 1.0, 0.0)), abs(n.y) < 0.9)); let b = cross(n, t);
+  return normalize(t * cos(ph) * st + b * sin(ph) * st + n * ct);
+}
+fn tension(i: i32) -> f32 { let t = u.v[25 + i / 4]; return t[i % 4]; }
+fn tensionAt(p: vec3f) -> f32 {
+  let n = i32(u.v[8].x); var ws = 0.0; var ts = 0.0;
+  for (var i = 0; i < n; i++) { let c = u.v[9 + i]; let d = length(p - c.xyz) / c.w; let w = exp(-d * d * 2.5); ws += w; ts += w * tension(i); }
+  return ts / max(ws, 1e-5);
+}
+fn trail(i: i32) -> vec4f { return u.v[29 + i]; }
+fn smin(a: f32, b: f32, k: f32) -> f32 { let h = max(k - abs(a - b), 0.0) / k; return min(a, b) - h * h * k * 0.25; }
+fn smax(a: f32, b: f32, k: f32) -> f32 { let h = max(k - abs(a - b), 0.0) / k; return max(a, b) + h * h * k * 0.25; }
+// ── 방: 벽 5면(−x,+x,−y,+y,−z), 각 면은 밀려난 거리 w 와 닿은 자리의 불룩함(가우스)을 갖는다
+fn faceN(f: i32) -> vec3f {
+  if (f == 0) { return vec3f(-1.0, 0.0, 0.0); } if (f == 1) { return vec3f(1.0, 0.0, 0.0); }
+  if (f == 2) { return vec3f(0.0, -1.0, 0.0); } if (f == 3) { return vec3f(0.0, 1.0, 0.0); }
+  return vec3f(0.0, 0.0, -1.0);
+}
+fn faceD(f: i32) -> f32 {
+  let B = u.v[6].xyz; var w = 0.0;
+  if (f < 4) { w = u.v[41][f]; } else { w = u.v[42].x; }
+  if (f < 2) { return B.x + w; } if (f < 4) { return B.y + w; } return B.z + w;
+}
+fn bump(f: i32, p: vec3f) -> f32 {
+  let b = u.v[43 + f]; if (b.z <= 1e-4) { return 0.0; }
+  var q = p.xy; if (f < 2) { q = p.yz; } else if (f < 4) { q = p.xz; }
+  let d = q - b.xy; return b.z * exp(-dot(d, d) / (b.w * b.w));
+}
+fn dInner(p: vec3f) -> f32 {   // 방 안쪽 공간(음수 = 안)
+  var d = -1e9;
+  for (var f = 0; f < 5; f++) { d = max(d, dot(faceN(f), p) - faceD(f) - bump(f, p)); }
+  return d;
+}
+fn dRoom(p: vec3f) -> f32 {    // 두꺼운 벽 자체(앞이 열린 상자)
+  let T = u.v[40].x; var o = p.z - u.v[6].z;
+  for (var f = 0; f < 5; f++) { o = max(o, dot(faceN(f), p) - faceD(f) - T - bump(f, p)); }
+  return max(o, -dInner(p));
+}
+// ── 덩어리
+fn nearest(p: vec3f) -> i32 {
+  let n = i32(u.v[8].x); var best = 1e9; var bi = 0;
+  for (var i = 0; i < n; i++) { let c = cell(i); let w = dot(p - c.xyz, p - c.xyz) - c.w * c.w; if (w < best) { best = w; bi = i; } }
+  return bi;
+}
+fn sdBlob(p: vec3f) -> f32 {
+  let n = i32(u.v[8].x); let k = u.v[6].w; let gap = u.v[8].y; let merge = u.v[7].w;
+  var best = 1e9; var bi = 0; var dm = 1e9;
+  for (var i = 0; i < n; i++) {
+    let c = cell(i); let w = dot(p - c.xyz, p - c.xyz) - c.w * c.w;
+    if (w < best) { best = w; bi = i; }
+    dm = smin(dm, length(p - c.xyz) - c.w, 0.45);
+  }
+  var d = dm;
+  if (merge < 0.999) {
+    let ci = cell(bi); var dw = -1e9;
+    for (var j = 0; j < n; j++) {
+      if (j == bi) { continue; }
+      let cj = cell(j); let e = cj.xyz - ci.xyz; let el = max(length(e), 1e-4);
+      dw = max(dw, (2.0 * dot(p, e) - (dot(cj.xyz, cj.xyz) - dot(ci.xyz, ci.xyz) - cj.w * cj.w + ci.w * ci.w)) / (2.0 * el));
+    }
+    d = mix(smax(length(p - ci.xyz) - ci.w, dw + gap * 0.5, k), dm, merge);
+  }
+  d = smax(d, dInner(p) + 0.012, k);         // 벽에 눌린 면 = 납작
+  return d;
+}
+fn nBlob(p: vec3f) -> vec3f {
+  let e = vec2f(1.0, -1.0) * 0.0012;
+  return normalize(e.xyy * sdBlob(p + e.xyy) + e.yyx * sdBlob(p + e.yyx) + e.yxy * sdBlob(p + e.yxy) + e.xxx * sdBlob(p + e.xxx));
+}
+fn nRoom(p: vec3f) -> vec3f {
+  let e = vec2f(1.0, -1.0) * 0.001;
+  return normalize(e.xyy * dRoom(p + e.xyy) + e.yyx * dRoom(p + e.yyx) + e.yxy * dRoom(p + e.yxy) + e.xxx * dRoom(p + e.xxx));
+}
+fn bounds(ro: vec3f, rd: vec3f, H: vec3f) -> vec2f {
+  let inv = 1.0 / rd; let t0 = (-H - ro) * inv; let t1 = (H - ro) * inv;
+  let tn = min(t0, t1); let tf = max(t0, t1);
+  return vec2f(max(max(tn.x, tn.y), tn.z), min(min(tf.x, tf.y), tf.z));
+}
+fn marchBlob(ro: vec3f, rd: vec3f) -> f32 {
+  let r = bounds(ro, rd, u.v[42].yzw); if (r.x > r.y || r.y < 0.0) { return -1.0; }
+  var t = max(r.x, 0.0);
+  for (var i = 0; i < 140; i++) { if (t > r.y) { break; } let d = sdBlob(ro + rd * t); if (d < 0.0006 * (1.0 + t)) { return t; } t += d * 0.85; }
+  return -1.0;
+}
+fn marchRoom(ro: vec3f, rd: vec3f) -> f32 {
+  let r = bounds(ro, rd, u.v[42].yzw + vec3f(0.05)); if (r.x > r.y || r.y < 0.0) { return -1.0; }
+  var t = max(r.x, 0.0);
+  for (var i = 0; i < 110; i++) { if (t > r.y) { break; } let d = dRoom(ro + rd * t); if (d < 0.0005 * (1.0 + t)) { return t; } t += d * 0.9; }
+  return -1.0;
+}
+// 빛 구슬 3개: 0 은 u.v[37], 1·2 는 u.v[66]·u.v[67] (w = 반지름, 꺼지면 0) · 세기는 u.v[68]
+fn orbAt(k: i32) -> vec4f { if (k == 0) { return u.v[37]; } if (k == 1) { return u.v[66]; } return u.v[67]; }
+fn orbOn(k: i32) -> f32 { let o = u.v[68]; return o[k]; }
+var<private> gOrb: i32;
+fn hitOrb(ro: vec3f, rd: vec3f) -> f32 {
+  var best = -1.0; gOrb = 0;
+  for (var k = 0; k < 3; k++) {
+    let o = orbAt(k); if (o.w <= 0.001) { continue; }
+    let oc = ro - o.xyz; let b = dot(oc, rd); let c = dot(oc, oc) - o.w * o.w; let h = b * b - c;
+    if (h < 0.0) { continue; } let t = -b - sqrt(h);
+    if (t > 1e-4 && (best < 0.0 || t < best)) { best = t; gOrb = k; }
+  }
+  return best;
+}
+fn hitOrbOld(ro: vec3f, rd: vec3f) -> f32 {
+  let o = u.v[37]; let oc = ro - o.xyz; let b = dot(oc, rd); let c = dot(oc, oc) - o.w * o.w; let h = b * b - c;
+  if (h < 0.0) { return -1.0; } let t = -b - sqrt(h); return select(-1.0, t, t > 1e-4);
+}
+fn hash3(p: vec3f) -> f32 { return fract(sin(dot(p, vec3f(127.1, 311.7, 74.7))) * 43758.5453); }
+fn vnoise(p: vec3f) -> f32 {
+  let i = floor(p); let f = fract(p); let w = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(hash3(i), hash3(i + vec3f(1, 0, 0)), w.x), mix(hash3(i + vec3f(0, 1, 0)), hash3(i + vec3f(1, 1, 0)), w.x), w.y),
+             mix(mix(hash3(i + vec3f(0, 0, 1)), hash3(i + vec3f(1, 0, 1)), w.x), mix(hash3(i + vec3f(0, 1, 1)), hash3(i + vec3f(1, 1, 1)), w.x), w.y), w.z);
+}
+// ── 바깥(방을 둘러싼 무대)
+fn env(d: vec3f) -> vec3f {
+  // 전시실(카메라 뒤 공간): 은은하게 조명된 회색 방. 바닥 쪽은 어둡고 위로 갈수록 밝으며, 천장의 넓은 확산 조명이 부드럽게 퍼진다
+  var g = mix(vec3f(0.16, 0.16, 0.17), vec3f(0.46, 0.46, 0.47), smoothstep(-0.7, 0.8, d.y));
+  let k = normalize(vec3f(0.0, 0.85, 0.5)); let a = acos(clamp(dot(d, k), -1.0, 1.0));
+  g += vec3f(1.5, 1.47, 1.42) * exp(-a * a / 0.18);
+  return g;
+}
+fn envOld(d: vec3f) -> vec3f {
+  let m = u.v[5].x;
+  if (m < 0.5) {
+    var c = mix(vec3f(0.50, 0.50, 0.52), vec3f(0.86, 0.86, 0.87), smoothstep(-0.3, 0.7, d.y));
+    c += vec3f(2.6) * smoothstep(0.42, 0.30, acos(clamp(dot(d, normalize(vec3f(-0.55, 0.55, 0.62))), -1.0, 1.0)));
+    c += vec3f(0.9, 0.92, 1.0) * smoothstep(0.30, 0.18, acos(clamp(dot(d, normalize(vec3f(0.75, 0.25, 0.6))), -1.0, 1.0)));
+    return c;
+  }
+  if (m < 1.5) {
+    var c = vec3f(0.006, 0.007, 0.009);
+    c += vec3f(4.0) * smoothstep(0.012, 0.004, abs(d.y - 0.55)) * smoothstep(0.9, 0.3, abs(d.x));
+    c += vec3f(2.5) * smoothstep(0.010, 0.003, abs(d.x + 0.62)) * smoothstep(0.8, 0.2, abs(d.y));
+    return c;
+  }
+  var c = mix(vec3f(1.0, 0.72, 0.62), vec3f(0.50, 0.46, 0.78), smoothstep(0.0, 0.8, d.y));
+  c = mix(vec3f(0.30, 0.22, 0.38), c, smoothstep(-0.12, 0.02, d.y));
+  return c + vec3f(0.9, 0.5, 0.35) * pow(max(dot(d, normalize(vec3f(0.35, 0.10, 0.93))), 0.0), 24.0);
+}
+fn envCam(d: vec3f) -> vec3f { return env(d); }
+fn envCamOld(d: vec3f) -> vec3f {
+  let m = u.v[5].x;
+  if (m < 0.5) { return mix(vec3f(0.42, 0.42, 0.44), vec3f(0.80, 0.80, 0.81), smoothstep(-0.4, 0.6, d.y)); }
+  if (m < 1.5) { return vec3f(0.008, 0.009, 0.011); }
+  return env(d);
+}
+// ── 빛 구슬: 유리 껍질 + 뜨거운 심지. 반사·굴절 광선에도 보인다
+fn orbEmit(p: vec3f, rd: vec3f, k: i32) -> vec3f {
+  let o = orbAt(k); let n = normalize(p - o.xyz); let c = max(dot(n, -rd), 0.0); let lw = u.v[4].x * orbOn(k);
+  let core = pow(c, 5.0); let shell = pow(1.0 - c, 3.0);
+  return lw * (vec3f(1.0, 0.96, 0.88) * (0.6 + 6.0 * core) + vec3f(0.8, 0.9, 1.0) * shell * 0.9);
+}
+// 그림자: 벽·덩어리 위 한 점에서 구슬까지 덩어리가 가리는가(부드럽게)
+fn orbShadow(p: vec3f, ko: i32) -> f32 {
+  let O = orbAt(ko); let L = O.xyz; let lv = L - p; let dl = length(lv); let rd = lv / dl;
+  var t = 0.015; var s = 1.0; var ph = 1e10;
+  let k = dl / max(O.w * 2.0, 0.01);   // 반그림자 폭 ∝ 구슬 반지름 / 거리(면광원)
+  for (var i = 0; i < 56; i++) {
+    if (t > dl - O.w) { break; }
+    let d = sdBlob(p + rd * t);
+    if (d < 0.0008) { s = 0.0; break; }
+    let y = d * d / (2.0 * ph); let dd = sqrt(max(d * d - y * y, 0.0));   // 개선된 반그림자(이전 표본과 이어 계산 → 띠·얼룩이 덜 생김)
+    s = min(s, k * dd / max(0.0, t - y)); ph = d; t += clamp(d, 0.01, 0.2);
+  }
+  s = smoothstep(0.0, 1.0, clamp(s, 0.0, 1.0));
+  // 투과: 유리(투명도 cl)는 빛의 대부분을 통과시킨다(두 면 프레넬 손실 ≈ 8%, 흡수는 흡수 값만큼)
+  let cl = u.v[3].x; let trans = cl * 0.92 * exp(-u.v[3].z * 0.3);
+  return mix(trans, 1.0, s);
+}
+// ── 벽 무늬(굴곡 왜곡을 보이게): 1 격자 · 2 줄무늬 · 3 체크 · 4 색 그라데이션
+fn wallPattern(p: vec3f, n: vec3f) -> vec3f {
+  let wl = u.v[5].z; let pm = u.v[5].y; let s = u.v[38].w;
+  var uv = p.xy; let an = abs(n);
+  if (an.x > an.y && an.x > an.z) { uv = p.zy; } else if (an.y > an.z) { uv = p.xz; }
+  let base = vec3f(0.98, 0.97, 0.95) * wl;
+  let ink = select(vec3f(0.55, 0.57, 0.60), base * 0.30, wl > 0.35);
+  if (pm < 0.5) { return base; }
+  if (pm < 1.5) { let g = abs(fract(uv * s) - 0.5); let ln = 1.0 - smoothstep(0.0, 0.035, 0.5 - max(g.x, g.y)); return mix(base, ink, ln * 0.85); }
+  if (pm < 2.5) { let g = abs(fract((uv.x + uv.y * 0.0) * s) - 0.5); return mix(base, ink, smoothstep(0.24, 0.20, g) * 0.85); }
+  if (pm < 3.5) { let c = (floor(uv.x * s) + floor(uv.y * s)); let k = abs(c - 2.0 * floor(c * 0.5)); return mix(base, mix(base, ink, 0.85), k); }
+  let th = u.v[0].z; let q = vec3f(uv * s, th * 0.3);
+  let f = vnoise(q + vec3f(vnoise(q * 0.7 + 5.0), vnoise(q * 0.7 + 9.0), 0.0) * 1.5);
+  let col = 0.5 + 0.5 * cos(6.2832 * (f * 1.2 + vec3f(0.0, 0.33, 0.67)) + th);
+  return col * col * wl * 1.4;
+}
+fn strips(p: vec3f, n: vec3f) -> f32 {
+  let B = u.v[6].xyz; var s = 0.0;
+  if (n.y < -0.5) { s += smoothstep(0.035, 0.015, abs(abs(p.x) - B.x * 0.45)) * smoothstep(B.z, B.z * 0.6, abs(p.z)); }
+  if (n.z > 0.5) { s += smoothstep(0.03, 0.012, abs(p.x + B.x * 0.62)) * smoothstep(B.y, B.y * 0.5, abs(p.y)); }
+  return s * u.v[5].w;
+}
+fn wallShade(p: vec3f, n: vec3f, rd: vec3f) -> vec3f {
+  let inner = dInner(p) < 0.01;
+  var alb = vec3f(0.98, 0.97, 0.95) * mix(u.v[5].z, 0.5 + 0.5 * u.v[5].z, 0.35);
+  if (inner) { alb = wallPattern(p, n); }
+  var direct = vec3f(0.0);
+  var spec = vec3f(0.0);
+  for (var ko = 0; ko < 3; ko++) {
+  let lw = u.v[4].x * orbOn(ko); if (lw <= 0.0) { continue; }
+  let L = orbAt(ko).xyz;
+  let lv = L - p; let ld2 = dot(lv, lv); let ll = max(dot(n, lv * inverseSqrt(ld2)), 0.0);
+  if (ll > 0.0 && inner) {
+    let rr = orbAt(ko).w;
+    let E = vec3f(1.0, 0.96, 0.9) * lw * 0.42 / max(ld2, rr * rr * 4.0 + 0.004) * orbShadow(p + n * 0.01, ko);   // 구 광원: 1/거리²
+    direct += E * ll;
+    // 벽 반사광: GGX 분포 · 슐릭 프레넬(0.04) · 스미스 가시도(언리얼 근사)
+    let l = lv * inverseSqrt(ld2); let v = -rd; let h = normalize(l + v);
+    let a = u.v[65].x * u.v[65].x; let nh = max(dot(n, h), 0.0); let nv = max(dot(n, v), 1e-3);
+    let dd = nh * nh * (a * a - 1.0) + 1.0; let D = a * a / (3.14159 * dd * dd);
+    let Fs = 0.04 + 0.96 * pow(1.0 - max(dot(v, h), 0.0), 5.0);
+    let kk = a * 0.5; let Vis = 0.5 / (ll * (nv * (1.0 - kk) + kk) + nv * (ll * (1.0 - kk) + kk));
+    spec += E * ll * D * Fs * Vis;
+  }
+  }
+  var ao = select(1.0, mix(0.30 + 0.70 * smoothstep(0.0, 0.5, sdBlob(p + n * 0.04)), 1.0, u.v[3].x * 0.75), inner);
+  if (inner) {   // 방 모서리 차폐: 이웃 벽까지 가까울수록 주변광이 덜 든다
+    var d1 = 1e9; var d2 = 1e9;
+    for (var f = 0; f < 5; f++) { let e = faceD(f) + bump(f, p) - dot(faceN(f), p); if (e < d1) { d2 = d1; d1 = e; } else if (e < d2) { d2 = e; } }
+    ao *= 0.45 + 0.55 * smoothstep(0.0, 0.4, d2);
+  }
+  let key = max(dot(n, normalize(vec3f(-0.4, 0.8, 0.5))), 0.0);
+  let Bz = u.v[6].z; let depth = clamp((Bz - p.z) / (2.0 * Bz + 1e-3), 0.0, 1.0);
+  let openLight = exp(-1.5 * depth) * (0.55 + 0.45 * max(n.z, 0.0)) * (0.85 + 0.15 * smoothstep(-1.0, 1.0, n.y));
+  let amb = select(0.35 + 0.55 * key, 0.10 + 0.72 * openLight, inner);
+  var c = alb * (amb * ao + direct) + spec;
+  if (inner) { c += vec3f(4.0) * strips(p, n); }
+  return c;
+}
+// 방·구슬·바깥 중 무엇이 보이나 — 반사·굴절 광선용
+fn trace2(ro: vec3f, rd: vec3f) -> vec3f {
+  let to = hitOrb(ro, rd); let tr = marchRoom(ro, rd);
+  let ko = gOrb;
+  if (to > 0.0 && (tr < 0.0 || to < tr)) { return orbEmit(ro + rd * to, rd, ko); }
+  if (tr > 0.0) { let p = ro + rd * tr; return wallShade(p, nRoom(p), rd); }
+  return env(rd);
+}
+// ── 박막 간섭(Airy, 8파장 → CIE → sRGB)
+fn cmf(l: f32) -> vec3f {
+  let t1 = (l - 442.0) * select(0.0374, 0.0624, l < 442.0); let t2 = (l - 599.8) * select(0.0323, 0.0264, l < 599.8); let t3 = (l - 501.1) * select(0.0382, 0.0490, l < 501.1);
+  let x = 0.362 * exp(-0.5 * t1 * t1) + 1.056 * exp(-0.5 * t2 * t2) - 0.065 * exp(-0.5 * t3 * t3);
+  let u1 = (l - 568.8) * select(0.0247, 0.0213, l < 568.8); let u2 = (l - 530.9) * select(0.0322, 0.0613, l < 530.9);
+  let y = 0.821 * exp(-0.5 * u1 * u1) + 0.286 * exp(-0.5 * u2 * u2);
+  let v1 = (l - 437.0) * select(0.0278, 0.0845, l < 437.0); let v2 = (l - 459.0) * select(0.0725, 0.0385, l < 459.0);
+  let z = 1.217 * exp(-0.5 * v1 * v1) + 0.681 * exp(-0.5 * v2 * v2);
+  return vec3f(x, y, z);
+}
+fn filmR(cosI: f32, d: f32) -> vec3f {
+  let n2 = u.v[2].z; let n3 = u.v[39].w;
+  let s2 = 1.0 - cosI * cosI;
+  let c2 = sqrt(max(1.0 - s2 / (n2 * n2), 0.0)); let c3 = sqrt(max(1.0 - s2 / (n3 * n3), 0.0));
+  let rs1 = (cosI - n2 * c2) / (cosI + n2 * c2); let rs2 = (n2 * c2 - n3 * c3) / (n2 * c2 + n3 * c3);
+  let rp1 = (n2 * cosI - c2) / (n2 * cosI + c2); let rp2 = (n3 * c2 - n2 * c3) / (n3 * c2 + n2 * c3);
+  var X = vec3f(0.0); var W = vec3f(0.0);
+  for (var i = 0; i < 24; i++) {
+    let l = 380.0 + 350.0 * (f32(i) + 0.5) / 24.0;
+    let ph = 12.566371 * n2 * d * c2 / l;                 // 두 면 반사의 위상차
+    let x = 0.5 * ph * (350.0 / 24.0) / l;                 // 한 파장 칸 안에서 위상이 흩어지는 폭의 절반
+    let cd = cos(ph) * select(sin(x) / x, 1.0, x < 1e-4); // 칸 평균 → 결맞음이 깨지는 만큼 색이 옅어진다
+    let Rs = (rs1 * rs1 + rs2 * rs2 + 2.0 * rs1 * rs2 * cd) / (1.0 + rs1 * rs1 * rs2 * rs2 + 2.0 * rs1 * rs2 * cd);
+    let Rp = (rp1 * rp1 + rp2 * rp2 + 2.0 * rp1 * rp2 * cd) / (1.0 + rp1 * rp1 * rp2 * rp2 + 2.0 * rp1 * rp2 * cd);
+    let c = cmf(l); X += c * 0.5 * (Rs + Rp); W += c;
+  }
+  let M = mat3x3f(3.2406, -0.9689, 0.0557, -1.5372, 1.8758, -0.2040, -0.4986, 0.0415, 1.0570);
+  return max(M * X / max(M * W, vec3f(1e-4)), vec3f(0.0));
+}
+// 열: 빛 구슬이 지나간 자리마다 남은 열(가우스). 시간이 지나면 식으면서(무게↓) 옆으로 퍼진다(폭↑)
+// 무게·폭은 한 숫자에 담겨 온다: 정수부/1000 = 무게, 소수부 = 폭(m)
+fn heat(p: vec3f, widen: f32) -> f32 {
+  var h = 0.0;
+  for (var i = 0; i < 16; i++) {
+    let t = u.v[48 + i]; let w = floor(t.w) / 1000.0; let sg = fract(t.w) * widen;
+    if (w <= 0.0) { continue; }
+    let d = p - t.xyz; h += w * exp(-dot(d, d) / (sg * sg));
+  }
+  for (var k = 1; k < 3; k++) { let o = orbAt(k); if (o.w <= 0.001) { continue; } let d = p - o.xyz; let sg = (u.v[37].w + 0.04) * widen; h += orbOn(k) * 0.45 * exp(-dot(d, d) / (sg * sg)); }
+  return 1.0 - exp(-h);   // 열이 겹쳐도 포화
+}
+fn hash33(p: vec3f) -> vec3f {
+  let q = vec3f(dot(p, vec3f(127.1, 311.7, 74.7)), dot(p, vec3f(269.5, 183.3, 246.1)), dot(p, vec3f(113.5, 271.9, 124.6)));
+  return -1.0 + 2.0 * fract(sin(q) * 43758.5453);
+}
+fn gnoise(p: vec3f) -> f32 {   // 그라디언트 노이즈(5차 보간) — 격자 각이 보이지 않는다
+  let i = floor(p); let f = fract(p); let w = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  let a = dot(hash33(i), f); let b = dot(hash33(i + vec3f(1, 0, 0)), f - vec3f(1, 0, 0));
+  let c = dot(hash33(i + vec3f(0, 1, 0)), f - vec3f(0, 1, 0)); let d = dot(hash33(i + vec3f(1, 1, 0)), f - vec3f(1, 1, 0));
+  let e = dot(hash33(i + vec3f(0, 0, 1)), f - vec3f(0, 0, 1)); let g = dot(hash33(i + vec3f(1, 0, 1)), f - vec3f(1, 0, 1));
+  let h = dot(hash33(i + vec3f(0, 1, 1)), f - vec3f(0, 1, 1)); let k = dot(hash33(i + vec3f(1, 1, 1)), f - vec3f(1, 1, 1));
+  return mix(mix(mix(a, b, w.x), mix(c, d, w.x), w.y), mix(mix(e, g, w.x), mix(h, k, w.x), w.y), w.z);
+}
+fn filmThk(p: vec3f, n: vec3f, ten: f32) -> f32 {
+  let th = u.v[0].z;
+  // 중력 배수: 위쪽 면은 막이 흘러내려 얇고(은·금빛), 아래쪽은 고여 두껍다(옅은 파스텔)
+  let drain = mix(0.30, 1.45, smoothstep(0.95, -0.95, n.y));
+  // 느린 소용돌이(마랑고니·열 대류): 큰 무늬만, 루프 원궤도로 흐른다
+  let q = p * 0.75 + vec3f(0.35 * cos(th), -0.55 * sin(th), 0.35 * sin(th));
+  let warp = vec3f(gnoise(q + 3.1), gnoise(q + 7.7), gnoise(q + 1.3)) * 0.9;
+  let sw = gnoise(q * 1.3 + warp) * 0.6 + gnoise(q * 2.7 + warp * 0.5 + 9.0) * 0.2;
+  // 막 난류: 마랑고니 대류가 만드는 잔 무늬 — 큰 흐름에 실려 가는 작은 소용돌이(여러 크기)
+  let tb = u.v[65].y;
+  let q2 = p * 3.2 + warp * 1.6 + vec3f(0.0, -th * 0.4, 0.0);
+  let w2 = vec3f(gnoise(q2 + 2.0), gnoise(q2 + 5.5), gnoise(q2 + 8.1)) * 0.8;
+  let fine = gnoise(q2 * 1.7 + w2) * 0.6 + gnoise(q2 * 3.9 + w2 * 1.3 + 4.0) * 0.3;
+  var d = u.v[2].x * drain * (1.0 + 0.55 * sw + tb * 0.45 * fine) * (1.0 - 0.78 * ten);
+  let pk = u.v[38]; let age = u.v[8].z;
+  if (u.v[8].w > 0.0) { let r = length(p - pk.xyz) - age * 0.55; d += 380.0 * sin(r * 34.0) * exp(-r * r * 18.0) * exp(-age * 0.8); }
+  return max(d, 0.0);
+}
+fn filmThkOld(p: vec3f, n: vec3f, ten: f32) -> f32 {
+  let th = u.v[0].z;
+  let q = p * 0.9 + vec3f(0.5 * cos(th), -0.7 * sin(th), 0.5 * sin(th));
+  let w = vec3f(vnoise(q + 1.7), vnoise(q + 9.2), vnoise(q + 4.4)) - 0.5;
+  let fl = 0.85 * vnoise(q * 1.1 + w * 1.8) + 0.15 * vnoise(q * 2.6 + w + 5.0);
+  let drain = mix(0.6, 1.3, smoothstep(0.9, -0.9, n.y));
+  var d = u.v[2].x * (0.3 + 1.05 * fl) * drain * (1.0 - 0.78 * ten);
+  let pk = u.v[38]; let age = u.v[8].z;
+  if (u.v[8].w > 0.0) { let r = length(p - pk.xyz) - age * 0.55; d += 380.0 * sin(r * 34.0) * exp(-r * r * 18.0) * exp(-age * 0.8); }
+  return max(d, 0.0);
+}
+fn ridge(q: vec3f) -> f32 { return 1.0 - abs(2.0 * vnoise(q) - 1.0); }
+fn through(p: vec3f, rd: vec3f, n: vec3f, ior: f32) -> vec3f {
+  let r1 = refract(rd, n, 1.0 / ior);
+  var t = 0.01; var q = p;
+  for (var k = 0; k < 64; k++) { q = p + r1 * t; let d = sdBlob(q); if (d > 0.0) { break; } t += max(-d * 0.9, 0.006); }
+  let nq = nBlob(q);
+  var r2 = refract(r1, -nq, ior);
+  if (dot(r2, r2) < 0.5) { r2 = reflect(r1, -nq); }
+  // 매질: 흡수 σa(유리 자체 + 염료 주머니) · 산란 σs(탁함). 지나온 길 t 만큼 베르-람베르트로 줄고,
+  // 길 위 6점에서 구슬 빛·주변광을 한 번 산란해 눈 쪽으로 보낸다(단일 산란, 등방 위상)
+  let mk = u.v[39];
+  let mid = p + r1 * t * 0.5;
+  let a = (mk.y - 0.5) * 6.2832; let w3 = vec3f(0.57735); let ca = cos(a); let sa = sin(a);
+  let dye = vec3f(0.62, 0.12, 0.50);
+  let dyeC = clamp(dye * ca + cross(w3, dye) * sa + w3 * dot(w3, dye) * (1.0 - ca), vec3f(0.0), vec3f(1.0));
+  let pocket = smoothstep(0.30, 0.70, vnoise(mid * 1.4 + 3.0));
+  let sigA = u.v[3].z * vec3f(1.0, 0.82, 0.62) + mk.z * pocket * (vec3f(1.0) - dyeC) * 5.0;   // 염료는 보색을 흡수
+  let sigS = mk.x * 7.0;
+  let sigT = sigA + vec3f(sigS);
+  var c = trace2(q + nq * 0.004, normalize(r2)) * exp(-sigT * t);
+  if (sigS > 0.001) {
+    let amb = env(vec3f(0.0, 1.0, 0.0)) * 0.2 + vec3f(0.98, 0.97, 0.95) * u.v[5].z * 0.7 + vec3f(0.3) * u.v[5].w;   // 방 안 평균 휘도(벽+띠 조명)
+    let ds = t / 6.0;
+    for (var k = 0; k < 6; k++) {
+      let sx = (f32(k) + 0.5) * ds; let x = p + r1 * sx;
+      let toEye = exp(-sigT * sx);
+      let toSurf = exp(-sigT * max(-sdBlob(x), 0.0));          // 산란점에서 표면까지 빛이 들어오는 길
+      // 등방 산란: 사방에서 오는 주변광은 위상함수(1/4π)를 4π 로 적분해 그대로, 점광원(구슬)은 1/4π · 1/거리²
+      var inL = amb;
+      for (var ko = 0; ko < 3; ko++) { let lv = orbAt(ko).xyz - x; inL += vec3f(1.0, 0.96, 0.88) * u.v[4].x * orbOn(ko) * 2.5 * 0.0796 / max(dot(lv, lv), 0.02); }
+      c += toEye * sigS * toSurf * inL * ds;
+    }
+  }
+  return c;
+}
+fn shadeBlob(p: vec3f, rd: vec3f) -> vec3f {
+  var n = nBlob(p);
+  let ten = tensionAt(p);
+  let wr = u.v[3].w * (1.0 - ten);
+  if (wr > 0.001) {
+    let q = p * 7.0 + vec3f(0.0, u.v[0].z * 0.3, 0.0); let e = 0.03;
+    let g = vec3f(ridge(q + vec3f(e, 0, 0)) - ridge(q - vec3f(e, 0, 0)), ridge(q + vec3f(0, e, 0)) - ridge(q - vec3f(0, e, 0)), ridge(q + vec3f(0, 0, e)) - ridge(q - vec3f(0, 0, e))) / (2.0 * e);
+    n = normalize(n - wr * 0.035 * (g - n * dot(g, n)));
+  }
+  // 잔물결: 표면장력이 만드는 미세한 표면 떨림(모세관파) — 법선만 아주 조금 흔든다
+  let mi = u.v[65].z;
+  if (mi > 0.001) {
+    let qm = p * 11.0 + vec3f(u.v[0].z * 1.5, -u.v[0].z * 1.1, u.v[0].z);   // 화소보다 크게(반짝이 잡음이 되지 않게)
+    let g = vec3f(gnoise(qm), gnoise(qm + 13.7), gnoise(qm + 29.1));
+    n = normalize(n + mi * 0.035 * (g - n * dot(g, n)));
+  }
+  var hn = n;
+  // 거칠기 얼룩: 자리마다 미세 거칠기가 조금씩 달라 반사가 고르지 않다(손자국·먼지처럼)
+  let ra = u.v[64].w * mix(1.0, 0.35 + 1.3 * (0.5 + 0.5 * gnoise(p * 2.4 + 7.0)), u.v[65].w);
+  if (ra > 0.0005) { hn = ggxH(n, ra * ra); if (dot(hn, -rd) <= 0.0) { hn = n; } }
+  let ci = clamp(dot(-rd, hn), 0.02, 1.0);
+  // 마랑고니 흐름: 데워진 자리는 표면장력이 낮아져 막이 끌려 나가 얇아지고, 둘레엔 밀려난 막이 고리로 쌓인다
+  let A = u.v[4].y;
+  let thin = heat(p, 1.0); let wide = heat(p, 2.0);
+  let dthk = filmThk(p, n, ten) * clamp(1.0 - 0.85 * A * thin + 0.5 * A * wide, 0.03, 3.0);
+  let F = filmR(ci, dthk);
+  let refl = trace2(p + n * 0.003, reflect(rd, hn));
+  let cl = u.v[3].x; let ior = u.v[3].y; let dsp = u.v[2].w;
+  var tr = vec3f(0.0);
+  if (cl > 0.01) {
+    tr.r = through(p, rd, hn, ior - dsp).r;
+    tr.g = through(p, rd, hn, ior).g;
+    tr.b = through(p, rd, hn, ior + dsp).b;
+  }
+  var lit = 0.4;
+  for (var ko = 0; ko < 3; ko++) { let lv = orbAt(ko).xyz - p; let ld = length(lv); lit += 2.0 * u.v[4].x * orbOn(ko) * max(dot(n, lv / ld), 0.0) / (1.0 + ld * ld); }
+  let body = vec3f(0.004, 0.0035, 0.005) * lit;
+  var col = F * refl + (vec3f(1.0) - F) * (tr * cl + body * (1.0 - cl));
+  return col;
+}
+struct VO { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
+@vertex fn vs(@builtin(vertex_index) i: u32) -> VO {
+  var a = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0));
+  var o: VO; o.pos = vec4f(a[i], 0.0, 1.0); o.uv = a[i]; return o;
+}
+@fragment fn fs(i: VO) -> @location(0) vec4f {
+  gPix = i.pos.xy; gN = 0.0;
+  let res = u.v[0].xy;
+  let sp = (i.uv + u.v[64].xy) * vec2f(res.x / res.y, 1.0);
+  let ro = u.v[1].xyz; let fwd = normalize(u.v[7].xyz - ro);
+  let rgt = normalize(cross(fwd, vec3f(0.0, 1.0, 0.0))); let up = cross(rgt, fwd);
+  let rd = normalize(fwd * u.v[1].w + rgt * sp.x + up * sp.y);
+  let to = hitOrb(ro, rd); let kHit = gOrb; let tb = marchBlob(ro, rd); let tr = marchRoom(ro, rd);
+  var t = 1e9; var id = 0;
+  if (tb > 0.0) { t = tb; id = 1; }
+  if (tr > 0.0 && tr < t) { t = tr; id = 2; }
+  if (to > 0.0 && to < t) { t = to; id = 3; }
+  var col: vec3f;
+  if (id == 0) { col = envCam(rd); }
+  else if (id == 1) { col = shadeBlob(ro + rd * t, rd); }
+  else if (id == 2) { let p = ro + rd * t; col = wallShade(p, nRoom(p), rd); }
+  else {
+    let p = ro + rd * t; let n = normalize(p - orbAt(kHit).xyz);
+    let fr = 0.04 + 0.96 * pow(1.0 - max(dot(n, -rd), 0.0), 5.0);
+    col = orbEmit(p, rd, kHit) + trace2(p + n * 0.002, reflect(rd, n)) * fr * 0.8;
+  }
+  return vec4f(clamp(col, vec3f(0.0), vec3f(64.0)), 1.0);
+}
+`;
+
+// ───────── 후처리(언리얼 순서): TAA → 블룸(렌즈 안 산란) → 노출·ACES 필름 톤매핑·비네팅
+const FSQ = `struct VO { @builtin(position) pos: vec4f };
+@vertex fn vs(@builtin(vertex_index) i: u32) -> VO { var a = array<vec2f, 3>(vec2f(-1.0, -1.0), vec2f(3.0, -1.0), vec2f(-1.0, 3.0)); var o: VO; o.pos = vec4f(a[i], 0.0, 1.0); return o; }
+`;
+const WG_RESOLVE = FSQ + `
+fn ycc(c: vec3f) -> vec3f { return vec3f(0.25 * c.r + 0.5 * c.g + 0.25 * c.b, 0.5 * c.r - 0.5 * c.b, -0.25 * c.r + 0.5 * c.g - 0.25 * c.b); }
+fn rgb(y: vec3f) -> vec3f { return vec3f(y.x + y.y - y.z, y.x + y.z, y.x - y.y - y.z); }
+@group(0) @binding(0) var cur: texture_2d<f32>;
+@group(0) @binding(1) var prev: texture_2d<f32>;
+@group(0) @binding(2) var<uniform> pu: vec4f;
+@fragment fn fs(i: VO) -> @location(0) vec4f {
+  let p = vec2i(i.pos.xy); let sz = vec2i(textureDimensions(cur)) - vec2i(1);
+  let c = textureLoad(cur, p, 0).rgb;
+  var m1 = vec3f(0.0); var m2 = vec3f(0.0); var mn = vec3f(1e9); var mx = vec3f(-1e9);
+  for (var y = -1; y <= 1; y++) { for (var x = -1; x <= 1; x++) {
+    let s = ycc(textureLoad(cur, clamp(p + vec2i(x, y), vec2i(0), sz), 0).rgb);
+    m1 += s; m2 += s * s; mn = min(mn, s); mx = max(mx, s);
+  } }
+  let mu = m1 / 9.0; let sg = sqrt(max(m2 / 9.0 - mu * mu, vec3f(0.0)));
+  let lo = max(mn, mu - 1.25 * sg); let hi = min(mx, mu + 1.25 * sg);
+  let hy = ycc(textureLoad(prev, p, 0).rgb);
+  let hc = clamp(hy, lo, hi);
+  // 기록이 묶이며 크게 잘렸으면(움직임) 새 프레임 비중↑, 거의 그대로면 누적↑
+  let moved = length(hy - hc) / (length(mu) * 0.1 + 0.02);
+  let a = select(clamp(mix(pu.y * 0.6, 0.5, clamp(moved, 0.0, 1.0)), 0.04, 1.0), 1.0, pu.x > 0.5);
+  return vec4f(rgb(mix(hc, ycc(c), a)), 1.0);
+}`;
+const WG_DOWN = FSQ + `
+@group(0) @binding(0) var src: texture_2d<f32>;
+@fragment fn fs(i: VO) -> @location(0) vec4f {
+  let b = vec2i(i.pos.xy) * 4; let sz = vec2i(textureDimensions(src)) - vec2i(1); var s = vec3f(0.0);
+  for (var y = 0; y < 4; y++) { for (var x = 0; x < 4; x++) { s += textureLoad(src, min(b + vec2i(x, y), sz), 0).rgb; } }
+  return vec4f(s / 16.0, 1.0);
+}`;
+const WG_BLUR = (dx, dy) => FSQ + `
+@group(0) @binding(0) var src: texture_2d<f32>;
+@fragment fn fs(i: VO) -> @location(0) vec4f {
+  let p = vec2i(i.pos.xy); let sz = vec2i(textureDimensions(src)) - vec2i(1);
+  let w = array<f32, 5>(0.2270, 0.1946, 0.1216, 0.0541, 0.0162);
+  var s = textureLoad(src, p, 0).rgb * w[0];
+  for (var k = 1; k < 5; k++) { let o = vec2i(${dx}, ${dy}) * k * 2;
+    s += (textureLoad(src, clamp(p + o, vec2i(0), sz), 0).rgb + textureLoad(src, clamp(p - o, vec2i(0), sz), 0).rgb) * w[k]; }
+  return vec4f(s, 1.0);
+}`;
+const WG_FINAL = FSQ + `
+@group(0) @binding(0) var hdr: texture_2d<f32>;
+@group(0) @binding(1) var blm: texture_2d<f32>;
+@group(0) @binding(2) var smp: sampler;
+@group(0) @binding(3) var<uniform> fu: vec4f;
+fn aces(x: vec3f) -> vec3f { return clamp(x * (2.51 * x + 0.03) / (x * (2.43 * x + 0.59) + 0.14), vec3f(0.0), vec3f(1.0)); }
+@fragment fn fs(i: VO) -> @location(0) vec4f {
+  let sz = vec2f(textureDimensions(hdr)); let uv = i.pos.xy / sz;
+  let c = textureLoad(hdr, vec2i(i.pos.xy), 0).rgb;
+  let b = textureSample(blm, smp, uv).rgb;
+  var col = mix(c, b, fu.y) * fu.x;
+  let d = (uv - 0.5) * vec2f(sz.x / sz.y, 1.0); let cs = 1.0 / (1.0 + dot(d, d) * 1.6); col *= mix(1.0, cs * cs, fu.z * 2.0);
+  col = aces(col);
+  let g = pow(col, vec3f(1.0 / 2.2));
+  let dn = fract(52.9829189 * fract(dot(i.pos.xy, vec2f(0.06711056, 0.00583715)))) - 0.5;   // 화소마다 다른 아주 작은 잡음(±½ 단계)
+  return vec4f(g + vec3f(dn / 255.0), 1.0);
+}`;
+
+
+// ───────── 실행
+const cv = $("cv");
+let device, ctx, pipe, ubuf, bind, scale = matchMedia("(max-width: 720px)").matches ? 0.7 : 1.0;
+let autoQ = true, paused = false, tAcc = 0, last = performance.now(), yaw = 0.0, pitch = 0.04;
+const U = new Float32Array(72 * 4);
+const CAPQ = new URLSearchParams(location.search);
+const CAP_CHOREO = CAPQ.get("choreo") === "1";
+const CAP_LOOP60 = CAPQ.get("loop60") === "1";
+const CAP = CAPQ.get("capture") ? { ver: CAPQ.get("capture"), frames: +(CAPQ.get("frames") || 300), spp: +(CAPQ.get("spp") || 4), fps: +(CAPQ.get("fps") || 30), warm: +(CAPQ.get("warm") || 60), w: +(CAPQ.get("w") || 720), h: +(CAPQ.get("h") || 1280) } : null;
+let lastStat = {};
+function fitFrame() {
+  const st = document.getElementById("stage").getBoundingClientRect();
+  const cs = getComputedStyle(document.getElementById("stage"));
+  const aw = st.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), ah = st.height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  const w = Math.min(aw, ah * 9 / 16), h = w * 16 / 9;
+  const fr = document.getElementById("frame"); fr.style.width = Math.floor(w) + "px"; fr.style.height = Math.floor(h) + "px";
+}
+addEventListener("resize", fitFrame);
+let taaBlend = 0.1, capCopy = false, capBuf = null, capBPR = 0;
+let resetHist = true, frameNo = 0, RT = null, pp = {}, ppU, finU, samp;
+const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const norm3 = (a) => { const l = Math.hypot(...a) || 1; return a.map((x) => x / l); };
+const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+let camGeo = null, pointer = null, camMode = false, drag = null, Rnow = [];
+const orb = { p: [0, 0.3, 0.3], v: [0, 0, 0], on: 1 };
+const orbs = [orb, { p: [-0.4, -0.3, 0.3], v: [0, 0, 0], on: 0 }, { p: [0.4, 0.5, 0.3], v: [0, 0, 0], on: 0 }];
+const hist = []; let histT = 0;
+const poke = { p: [0, 0, 0], t: -1e9 };
+
+async function init() {
+  if (!navigator.gpu) throw new Error("이 브라우저는 WebGPU 를 지원하지 않습니다. 크롬·엣지 최신판 또는 iOS 18 이상 사파리에서 열어 주세요.");
+  const ad = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+  if (!ad) throw new Error("GPU 어댑터를 찾지 못했습니다. 브라우저 설정에서 하드웨어 가속을 켜 주세요.");
+  device = await ad.requestDevice();
+  ctx = cv.getContext("webgpu");
+  const fmtc = CAP ? "rgba8unorm" : navigator.gpu.getPreferredCanvasFormat();
+  ctx.configure({ device, format: fmtc, alphaMode: "opaque", usage: GPUTextureUsage.RENDER_ATTACHMENT | (CAP ? GPUTextureUsage.COPY_SRC : 0) });
+  const mod = device.createShaderModule({ code: WGSL });
+  const info = await mod.getCompilationInfo();
+  const errs = info.messages.filter((m) => m.type === "error");
+  if (errs.length) throw new Error("셰이더 오류: " + errs.map((m) => `${m.lineNum}:${m.linePos} ${m.message}`).join(" / "));
+  const HF = "rgba16float";
+  const mk = (code, fmt) => { const m = device.createShaderModule({ code }); return device.createRenderPipeline({ layout: "auto", vertex: { module: m, entryPoint: "vs" }, fragment: { module: m, entryPoint: "fs", targets: [{ format: fmt }] }, primitive: { topology: "triangle-list" } }); };
+  pipe = device.createRenderPipeline({ layout: "auto", vertex: { module: mod, entryPoint: "vs" }, fragment: { module: mod, entryPoint: "fs", targets: [{ format: HF }] }, primitive: { topology: "triangle-list" } });
+  pp = { resolve: mk(WG_RESOLVE, HF), down: mk(WG_DOWN, HF), blurH: mk(WG_BLUR(1, 0), HF), blurV: mk(WG_BLUR(0, 1), HF), final: mk(WG_FINAL, fmtc) };
+  ubuf = device.createBuffer({ size: U.byteLength, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  ppU = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  finU = device.createBuffer({ size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  samp = device.createSampler({ magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" });
+  bind = device.createBindGroup({ layout: pipe.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: ubuf } }] });
+  if (CAP) runCapture(); else requestAnimationFrame(frame);
+}
+function resize() {
+  const w = CAP ? CAP.w : Math.max(8, Math.round(cv.clientWidth * devicePixelRatio * scale)), h = CAP ? CAP.h : Math.max(8, Math.round(cv.clientHeight * devicePixelRatio * scale));
+  if (cv.width !== w || cv.height !== h || !RT) { cv.width = w; cv.height = h; buildTargets(w, h); }
+}
+// HDR 화면 · TAA 이력 2장(번갈아) · 블룸용 1/4 화면 2장
+function buildTargets(w, h) {
+  if (RT) for (const k of ["hdr", "h0", "h1", "qa", "qb"]) RT[k].destroy();
+  const T = (W, H) => device.createTexture({ size: [W, H], format: "rgba16float", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.RENDER_ATTACHMENT });
+  const qw = Math.max(1, Math.ceil(w / 4)), qh = Math.max(1, Math.ceil(h / 4));
+  RT = { hdr: T(w, h), h0: T(w, h), h1: T(w, h), qa: T(qw, qh), qb: T(qw, qh) };
+  const v = (t) => t.createView();
+  const bg = (pl, res) => device.createBindGroup({ layout: pl.getBindGroupLayout(0), entries: res.map((r, i) => ({ binding: i, resource: r })) });
+  RT.bg = [0, 1].map((k) => {
+    const prev = k ? RT.h1 : RT.h0, next = k ? RT.h0 : RT.h1;
+    return { next, resolve: bg(pp.resolve, [v(RT.hdr), v(prev), { buffer: ppU }]), down: bg(pp.down, [v(next)]), final: bg(pp.final, [v(next), v(RT.qa), samp, { buffer: finU }]) };
+  });
+  RT.blurH = bg(pp.blurH, [v(RT.qa)]); RT.blurV = bg(pp.blurV, [v(RT.qb)]);
+  resetHist = true;
+}
+const halton = (i, b) => { let f = 1, r = 0; while (i > 0) { f /= b; r += f * (i % b); i = Math.floor(i / b); } return r; };
+function lightTargets(th) {
+  const n = Math.round(P.n), cen = [0, 1, 2].map((a) => cells.slice(0, n).reduce((m, c) => m + c.p[a], 0) / n);
+  const B = EB;
+  // 둘째·셋째 빛은 덩어리 한가운데를 파고든다 → 마디들이 빛을 피해 양쪽으로 흩어지며 덩어리가 갈라진다
+  // 둘째 빛은 덩어리를 좌우로 가로지르고(칼), 셋째 빛은 위아래로 가로지른다 → 마디들이 빛을 피해 양쪽으로 갈라진다
+  // 가르는 빛: 무리 사이 틈(가운데 세로선 · 위아래 사이)에 머물며 천천히 흔들린다
+  const t1 = [0.04 * B[0] * Math.sin(2 * th), 0.18 * B[1] * Math.sin(th + 0.4), 0.05 * Math.sin(3 * th)];
+  const t2 = [0.10 * B[0] * Math.cos(th + 2.0), 0.02 * B[1] + 0.06 * B[1] * Math.sin(2 * th), 0.05 * Math.cos(2 * th)];
+  if (choreoOn) return [autoLight(th), t1, t2];
+  const path = (ph) => {
+    const t = th + ph;
+    switch (P.lpath) {
+      case "orbit": return [cen[0] + 0.75 * B[0] * Math.cos(2 * t), cen[1] + 0.35 * B[1] * Math.sin(t), cen[2] + 0.6 * B[2] * Math.sin(2 * t) + 0.15];
+      case "scan": return [0.8 * B[0] * Math.sin(6 * t), 0.8 * B[1] * Math.cos(t), 0.55 * B[2] + 0.1];
+      case "spiral": { const r = 0.75 * B[0] * (0.45 + 0.55 * Math.sin(t)); return [r * Math.cos(5 * t), 0.75 * B[1] * Math.sin(1.5 * t), cen[2] + r * Math.sin(5 * t) * 0.6]; }
+      case "patrol": return patrolTarget(ph);
+      default: return ph === 0 ? autoLight(t) : autoLight(t + 0.0);
+    }
+  };
+  return [path(0), path(2.094), path(4.189)];
+}
+// 자율 순찰: 방 안의 임의 지점을 차례로 찾아가며, 덩어리 표면을 스친다
+const patrolWp = [null, null, null];
+function patrolTarget(ph) {
+  const k = ph === 0 ? 0 : ph < 3 ? 1 : 2, o = orbs[k], B = EB;
+  if (!patrolWp[k] || Math.hypot(...o.p.map((x, a) => x - patrolWp[k][a])) < 0.12) {
+    const d = norm3([Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 0.8 + 0.2]);
+    let t = 4; for (let i = 0; i < 70; i++) { const q = d.map((x) => x * t); const s = sdfCPU(q, Rnow); if (s < 0.003) break; t -= Math.max(s, 0.005); if (t < 0) { t = 0; break; } }
+    patrolWp[k] = d.map((x, a) => Math.max(-B[a] * 0.9, Math.min(B[a] * 0.9, x * (t + P.orbR + 0.1))));
+  }
+  return patrolWp[k];
+}
+function lightCountTarget() {
+  if (!choreoOn) return [1, P.lights >= 2 ? 1 : 0, P.lights >= 3 ? 1 : 0];
+  const t = ((chT % 60) + 60) % 60, sm = (a, b, x) => { const u = Math.min(1, Math.max(0, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
+  const off = 1 - sm(50, 55, t);
+  return [1, sm(18, 22, t) * off, sm(36, 40, t) * off];   // 18~22초 둘째 빛, 36~40초 셋째 빛, 50~55초 다시 하나로(끝 전에 완전히 합쳐져 루프가 이어지게)
+}
+function autoLight(th) {
+  const d = norm3([Math.sin(3 * th), 0.75 * Math.sin(2 * th + 0.7), 0.9 + 0.3 * Math.cos(th)]);
+  let t = 4; for (let i = 0; i < 70; i++) { const q = d.map((x) => x * t); const s = sdfCPU(q, Rnow); if (s < 0.003) break; t -= Math.max(s, 0.005); if (t < 0) { t = 0; break; } }
+  return d.map((x) => x * (t + P.orbR + 0.06));
+}
+let fpsN = 0, fpsT = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const sdt = paused ? 0 : dt * P.speed;
+  tAcc += sdt;
+  if (!paused) chT += dt;
+  resize();
+  // 안무 중엔 덩어리 내부 움직임의 주기가 60초에 정수 번 들어가게(루프가 이어지게)
+  const loopEff = (choreoOn || CAP_LOOP60) ? 60 * P.speed / Math.max(1, Math.round(60 * P.speed / P.loop)) : P.loop;
+  const th = 2 * Math.PI * ((tAcc / loopEff) % 1);
+  const cs = choreoOn ? choreoScale(chT) : [1, 1, 1];
+  EB = [P.boxX * cs[0], P.boxY * cs[1], P.boxZ * cs[2]];
+  const n = Math.round(P.n);
+  if (!Rnow.length) Rnow = cells.map((c) => radiusOf(c, n, th));
+  const tgs = lightTargets(th);
+  if (pointer && now - pointer.t < 2500 && camGeo) { const hit = pickSurface(pointer.x, pointer.y); if (hit) tgs[0] = hit; }
+  const onT = lightCountTarget();
+  orbs.forEach((o, k) => { o.on += (onT[k] - o.on) * Math.min(1, dt * 2.5); if (choreoOn) o.on = onT[k]; });
+  if (sdt > 0) Rnow = stepWorld(sdt, th, tgs);
+  if (!orb.p.every(Number.isFinite) || !cells.slice(0, n).every((c) => c.p.every(Number.isFinite))) {
+    orb.p = [0, 0.3, 0.3]; orb.v = [0, 0, 0]; hist.length = 0; resetCells(); for (const w of walls) { w.w = 0; w.v = 0; w.amp = 0; } Rnow = cells.map((c) => radiusOf(c, n, th));
+  }
+  if (now - histT > 50 && !paused) { hist.unshift({ p: orb.p.slice(), t: tAcc }); hist.length = Math.min(hist.length, 16); histT = now; }
+  // 카메라: 방 입구 앞, 9:16 화면에 방 전체(벽 두께 포함)가 들어오게
+  const B = EB, T = P.wallT, asp = cv.width / cv.height;
+  // 카메라는 가장 큰 방(안무 최대)에 맞춰 고정 — 방이 실제로 작아졌다 커지는 게 보이게
+  const KM = choreoOn ? CHOREO_MAX : 1, BC = [P.boxX * KM, P.boxY * KM, P.boxZ * KM];
+  const req = Math.max((BC[1] + T) * 1.01, (BC[0] + T) * 1.01 / asp);   // 앞 테두리(벽 두께 포함)가 화면 가장자리에 닿게
+  const focal = 1.9, dist = req * focal + BC[2];
+  const yy = yaw,   // 카메라 고정(정호님 10/16: 벽 전체가 조금씩 움직이지 않게)
+    cam = [dist * Math.sin(yy) * Math.cos(pitch), dist * Math.sin(pitch), dist * Math.cos(yy) * Math.cos(pitch)];
+  const tgt = [0, 0, 0];
+  U.fill(0);
+  U.set([cv.width, cv.height, th, 0], 0);
+  U.set([...cam, focal], 4);
+  U.set([P.thk, P.filmStr, P.filmIOR, P.disp], 8);
+  U.set([P.clarity, P.ior, P.tint * 2.0, P.wrinkle], 12);
+  U.set([P.lightW * 3.0, P.wash, P.expo, P.breathe], 16);
+  U.set([P.env, P.pattern, P.wallLum, 0], 20);   // 띠 조명 없음(정호님 10/15)
+  U.set([...B, P.round], 24);
+  U.set([...tgt, P.merge], 28);
+  const age = (now - poke.t) / 1000;
+  U.set([n, P.gap, age, age < 5 ? 1 : 0], 32);
+  let tsum = 0;
+  for (let i = 0; i < n; i++) { U.set([...cells[i].p, Rnow[i]], (9 + i) * 4); U[25 * 4 + i] = cells[i].ten; tsum += cells[i].ten; }
+  for (let k = 0; k < 16; k++) {
+    const hk = hist[k]; if (!hk) continue;
+    const age = Math.max(0, tAcc - hk.t);
+    const w = Math.min(0.999, P.lightW * 0.45 * Math.exp(-age / 1.1));         // 식는다
+    const sg = Math.min(0.95, (P.orbR + 0.04) * Math.sqrt(1 + age * 3.0));      // 퍼진다
+    U[(48 + k) * 4] = hk.p[0]; U[(48 + k) * 4 + 1] = hk.p[1]; U[(48 + k) * 4 + 2] = hk.p[2]; U[(48 + k) * 4 + 3] = Math.floor(w * 1000) + sg;
+  }
+  U.set([...orb.p, P.orbR], 37 * 4);
+  U.set([...orbs[1].p, orbs[1].on > 0.01 ? P.orbR * Math.min(1, orbs[1].on * 1.5) : 0], 66 * 4);
+  U.set([...orbs[2].p, orbs[2].on > 0.01 ? P.orbR * Math.min(1, orbs[2].on * 1.5) : 0], 67 * 4);
+  U.set([1, orbs[1].on, orbs[2].on, 0], 68 * 4);
+  U.set([...poke.p, P.patScale], 38 * 4);
+  U.set([P.milk, P.core, P.coreAmt, P.under], 39 * 4);
+  U.set([T, 0, 0, 0], 40 * 4);
+  U.set([walls[0].w, walls[1].w, walls[2].w, walls[3].w], 41 * 4);
+  const wmax = Math.max(...walls.map((w) => w.w)), amax = Math.max(...walls.map((w) => w.amp));
+  const H = B.map((b) => b + wmax + T + amax + 0.03);
+  U.set([walls[4].w, H[0], H[1], H[2]], 42 * 4);
+  walls.forEach((w, f) => U.set([w.cu, w.cv, w.amp, Math.max(0.08, w.rad)], (43 + f) * 4));
+  frameNo++;
+  const jx = (halton(frameNo % 16 + 1, 2) - 0.5) * 2 / cv.width, jy = (halton(frameNo % 16 + 1, 3) - 0.5) * 2 / cv.height;
+  U.set([jx, jy, frameNo % 997, P.rough], 64 * 4);
+  U.set([P.wallRough, P.turb, P.micro, P.smudge], 65 * 4);
+  device.queue.writeBuffer(ubuf, 0, U);
+  device.queue.writeBuffer(ppU, 0, new Float32Array([resetHist ? 1 : 0, taaBlend === 0.1 ? 0.12 : taaBlend, 0, 0]));
+  device.queue.writeBuffer(finU, 0, new Float32Array([P.expo, P.bloom, P.vig, 0]));
+  resetHist = false;
+  const enc = device.createCommandEncoder();
+  const run = (pl, bgp, view) => { const ps = enc.beginRenderPass({ colorAttachments: [{ view, loadOp: "clear", storeOp: "store", clearValue: { r: 0, g: 0, b: 0, a: 1 } }] }); ps.setPipeline(pl); ps.setBindGroup(0, bgp); ps.draw(3); ps.end(); };
+  const B2 = RT.bg[frameNo % 2];
+  run(pipe, bind, RT.hdr.createView());
+  run(pp.resolve, B2.resolve, B2.next.createView());
+  run(pp.down, B2.down, RT.qa.createView());
+  run(pp.blurH, RT.blurH, RT.qb.createView());
+  run(pp.blurV, RT.blurV, RT.qa.createView());
+  const outTex = ctx.getCurrentTexture();
+  run(pp.final, B2.final, outTex.createView());
+  if (capCopy) enc.copyTextureToBuffer({ texture: outTex }, { buffer: capBuf, bytesPerRow: capBPR }, [CAP.w, CAP.h]);
+  device.queue.submit([enc.finish()]);
+  camGeo = { cam, fwd: norm3(sub3(tgt, cam)), focal };
+  const tm = tsum / n; const wp = Math.max(...walls.map((w) => w.w + w.amp));
+  lastStat = { ten: tm, wall: wp };
+  fpsN++; if (now - fpsT > 1000) { const fps = fpsN * 1000 / (now - fpsT);
+    if (autoQ && fps < 20 && scale > 0.6) scale = Math.max(0.6, scale * 0.9);
+    else if (autoQ && fps > 55 && scale < 1.3) scale = Math.min(1.3, scale * 1.1);
+    lastStat.fps = Math.round(fps); fpsN = 0; fpsT = now; }
+  if (!CAP) requestAnimationFrame(frame);
+}
+// ───────── 녹화 모드: ?capture=버전&frames=300&w=720&h=1280&spp=4&fps=30
+// 실시간 시계 대신 1/fps 초씩 정확히 진행 · 한 프레임에 TAA 표본 spp 장을 쌓아 깨끗하게 · 그림을 서버(capture_server.py)로 보낸다
+async function runCapture() {
+  const { ver, frames, spp, fps, warm, w, h } = CAP;
+  capBPR = Math.ceil(w * 4 / 256) * 256;
+  capBuf = device.createBuffer({ size: capBPR * h, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  let vt = 1000;
+  frame(vt);
+  for (let i = 0; i < warm; i++) { vt += 1000 / fps; taaBlend = 1; frame(vt); }        // 세포가 자리 잡을 때까지 미리 돌린다
+  chT = 0;   // 안무는 녹화 첫 프레임에서 0초
+  const row = new Uint8Array(w * 4 * h);
+  const t0 = performance.now();
+  for (let f = 0; f < frames; f++) {
+    vt += 1000 / fps;
+    for (let k = 0; k < spp; k++) {
+      taaBlend = k === 0 ? 0.6 : 1 / (k + 1);
+      capCopy = k === spp - 1;
+      frame(k === 0 ? vt : vt);                                                       // 같은 시각(dt=0)에서 화소 흔들기만 바꿔 쌓는다
+    }
+    capCopy = false;
+    await capBuf.mapAsync(GPUMapMode.READ);
+    const src = new Uint8Array(capBuf.getMappedRange());
+    for (let y = 0; y < h; y++) row.set(src.subarray(y * capBPR, y * capBPR + w * 4), y * w * 4);
+    capBuf.unmap();
+    const last = f === frames - 1;
+    const url = `/frame?name=${CAPQ.get("name") || ver}&stills=${CAPQ.get("stills") || ""}&secs=${Math.round(frames / fps)}&i=${f}&w=${w}&h=${h}&fps=${fps}&first=${f === 0 ? 1 : 0}&done=${last ? 1 : 0}&info=${w}x${h}_${frames}f_${fps}fps_${spp}spp`;
+    for (let tries = 0; ; tries++) {   // 연결이 가끔 시간 초과로 끊긴다 → 다시 보낸다(서버는 프레임 번호 자리에 덮어써서 겹치지 않음)
+      try { const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 8000); const r = await fetch(url, { method: "POST", body: row, signal: ctl.signal }); clearTimeout(tm); if (r.ok) break; } catch (e) {}
+      if (tries > 30) throw new Error("프레임 전송 실패 " + f);
+      await new Promise((r) => setTimeout(r, 300 + tries * 200));
+    }
+    document.title = `녹화 ${ver} ${f + 1}/${frames} · ${((performance.now() - t0) / 1000).toFixed(0)}초`;
+  }
+  document.title = `녹화 끝 ${ver}`;
+}
+// ───────── 인터랙션
+function rayFrom(nx, ny) {
+  const { cam, fwd, focal } = camGeo; const r = norm3(cross3(fwd, [0, 1, 0])); const up = cross3(r, fwd);
+  const ax = nx * cv.width / cv.height;
+  return { ro: cam, rd: norm3([0, 1, 2].map((k) => fwd[k] * focal + r[k] * ax + up[k] * ny)) };
+}
+function hitSurface(nx, ny) {
+  const { ro, rd } = rayFrom(nx, ny); let t = 0;
+  for (let i = 0; i < 120; i++) {
+    const q = ro.map((x, k) => x + rd[k] * t); const d = sdfCPU(q, Rnow);
+    if (d < 0.002) { const e = 0.003; const n = norm3([0, 1, 2].map((k) => { const a = q.slice(), b = q.slice(); a[k] += e; b[k] -= e; return sdfCPU(a, Rnow) - sdfCPU(b, Rnow); })); return { q, n }; }
+    t += Math.max(d, 0.002); if (t > 30) break;
+  }
+  return null;
+}
+function pickSurface(nx, ny) {
+  const h = hitSurface(nx, ny);
+  if (h) return h.q.map((x, k) => x + h.n[k] * (P.orbR + 0.06));
+  const { ro, rd } = rayFrom(nx, ny); const t = (P.boxZ * 0.5 - ro[2]) / rd[2];
+  return ro.map((x, k) => x + rd[k] * t);
+}
+function ndc(e) { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height * 2 - 1)]; }
+cv.addEventListener("contextmenu", (e) => e.preventDefault());
+cv.addEventListener("pointerdown", (e) => {
+  cv.setPointerCapture(e.pointerId);
+  const [x, y] = ndc(e);
+  if (e.button === 2 || camMode) { drag = { x: e.clientX, y: e.clientY, yaw, pitch }; return; }
+  pointer = { x, y, t: performance.now() };
+  drag = { light: true, moved: 0 };
+});
+cv.addEventListener("pointermove", (e) => {
+  const [x, y] = ndc(e);
+  if (drag && !drag.light) { yaw = Math.max(-0.9, Math.min(0.9, drag.yaw - (e.clientX - drag.x) * 0.005)); pitch = Math.max(-0.6, Math.min(0.6, drag.pitch + (e.clientY - drag.y) * 0.004)); return; }
+  if (e.pointerType === "mouse" || drag) pointer = { x, y, t: performance.now() };
+  if (drag) drag.moved += Math.abs(e.movementX) + Math.abs(e.movementY);
+});
+cv.addEventListener("pointerup", (e) => {
+  if (drag && drag.light && drag.moved < 6 && camGeo) {
+    const [x, y] = ndc(e); const h = hitSurface(x, y);
+    if (h) {
+      poke.p = h.q; poke.t = performance.now();
+      cells.slice(0, Math.round(P.n)).forEach((c) => { const d = c.p.map((v, k) => v - h.q[k]); const l = Math.hypot(...d) || 1; const k = 2.4 * Math.max(0, 1 - l / 1.2); for (let a = 0; a < 3; a++) c.v[a] += (d[a] / l - h.n[a] * 0.6) * k; });
+    }
+  }
+  drag = null;
+});
+cv.addEventListener("pointerleave", () => { if (!drag) pointer = null; });
+$("camMode").onclick = () => { camMode = !camMode; $("camMode").setAttribute("aria-pressed", String(camMode)); };
+$("choreo").onclick = () => { choreoOn = !choreoOn; chT = 0; $("choreo").setAttribute("aria-pressed", String(choreoOn)); resetHist = true; };
+$("pause").onclick = () => { paused = !paused; $("pause").textContent = paused ? "재생" : "멈춤"; };
+$("resDown").onclick = () => { autoQ = false; scale = Math.max(0.25, scale - 0.1); };
+$("resUp").onclick = () => { autoQ = false; scale = Math.min(1.5, scale + 0.1); };
+$("copy").onclick = () => { const t = $("vals"); navigator.clipboard.writeText(t.value).then(() => { $("copy").textContent = "복사됨"; setTimeout(() => $("copy").textContent = "값 복사", 1200); }).catch(() => { t.focus(); t.select(); }); };
+fitFrame();
+buildPresets(); buildUI(); applyVersion(CAP ? CAP.ver : "Q3");
+if (CAP) { document.getElementById("panel").style.display = "none"; if (CAP_CHOREO) choreoOn = true; }
+if (CAP) for (const k of ["motion", "lpath", "react"]) if (CAPQ.get(k)) P[k] = CAPQ.get(k);
+if (CAP && CAPQ.get("set")) for (const kv of CAPQ.get("set").split(",")) { const [k, v] = kv.split(":"); if (k in P) P[k] = isNaN(+v) ? v : +v; }   // 시험용 값 덮어쓰기
+const HERO = CAPQ.has("hero");
+const tell = (m) => { try { parent.postMessage({ yumak: m }, "*"); } catch (e) {} };
+if (HERO) {
+  const bg = "#" + (CAPQ.get("bg") || "f0f1f0").replace(/[^0-9a-f]/gi, "");
+  const st = document.createElement("style");
+  st.textContent = `#panel{display:none!important} #stage{right:0!important;padding:0!important;display:block!important} html,body{background:${bg}!important} #cv{border-radius:0} #msg{display:none!important}`;
+  document.head.appendChild(st);
+  applyVersion("Q5");
+  scale = 1; autoQ = false;   // 원본 해상도(devicePixelRatio 그대로) — 정호님 10/16 「해상도가 낮다」. 느린 기기는 부모 창이 정지 사진으로 넘김
+  // 방을 화면 비율대로 넓힌다(정호님 10/16). 세로는 그대로, 가로만 비율에 맞춤.
+  // 덩어리 부피는 9:16 방 기준으로 고정 → 방이 넓으면 덜 눌리고, 좁으면 더 눌린다.
+  const BASE = { ...P }, A0 = 9 / 16;
+  const heroFit = () => {
+    const w = innerWidth || document.documentElement.clientWidth, h = innerHeight || document.documentElement.clientHeight, fr = document.getElementById("frame");
+    if (!w || !h) return;
+    fr.style.width = w + "px"; fr.style.height = h + "px";
+    const a = Math.max(0.35, Math.min(3.2, w / h));
+    P.boxX = BASE.boxX * a / A0;
+    P.vol = BASE.vol * Math.cbrt(BASE.boxX / P.boxX);
+  };
+  fitFrame = heroFit; heroFit();
+  addEventListener("resize", heroFit);
+  let lastWH = "";
+  setInterval(() => { const k = innerWidth + "x" + innerHeight; if (k !== lastWH) { lastWH = k; heroFit(); } }, 400);
+  // 창 어디서든 포인터가 빛을 끈다(캔버스 밖은 가장자리로 붙음)
+  addEventListener("pointermove", (e) => {
+    if (e.target === cv) return;
+    const r = cv.getBoundingClientRect();
+    const cx = Math.max(r.left + 1, Math.min(r.right - 1, e.clientX)), cy = Math.max(r.top + 1, Math.min(r.bottom - 1, e.clientY));
+    const [x, y] = ndc({ clientX: cx, clientY: cy, target: cv });
+    pointer = { x, y, t: performance.now() };
+  });
+  // 느린 기기: 처음 2초 뒤 3초 동안 평균 프레임 간격이 45ms 넘으면 알림
+  let t0 = 0, n = 0, prev = 0, sum = 0, sent = false;
+  const mon = (t) => { if (!t0) t0 = t; if (prev && t - t0 > 2000) { sum += t - prev; n++; } prev = t;
+    if (!sent && t - t0 > 5000) { sent = true; if (n && sum / n > 45) tell("slow"); return; } requestAnimationFrame(mon); };
+  requestAnimationFrame(mon);
+}
+init().then(() => tell("ready")).catch((e) => { tell("fail"); const m = $("msg"); m.hidden = false; m.textContent = e.message; });
+</script>
