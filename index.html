@@ -457,9 +457,9 @@ function media(w,cls,still){
 function renderIndex(){}
 function worksList(){
   const card=x=>`<li><a href="#w/${x.id}"><img src="img/${x.img[0]}" alt="" loading="lazy" decoding="async"><b>${esc(x.t[LANG])}</b>${x.collab?`<small class="with">${LANG==="ko"?"함께":"with"} ${esc(x.collab[LANG])}</small>`:""}${x.homage?`<small class="with">${LANG==="ko"?"원작":"After"} ${esc(x.homage[LANG])}</small>`:""}<small>${yr(x)} · ${esc(x.md[LANG])}</small></a></li>`;
-  const solo=LIST.filter(x=>!x.collab&&!x.homage),col=LIST.filter(x=>x.collab),hom=LIST.filter(x=>x.homage);
+  const solo=LIST.filter(x=>!x.collab&&!x.homage),col=LIST.filter(x=>x.collab||x.homage);
   const sec=(id,ko,en,list)=>`<h2 id="${id}">${LANG==="ko"?ko:en}<span>${list.length}</span></h2><ul aria-labelledby="${id}">${list.map(card).join("")}</ul>`;
-  return `<section class="works" id="works" aria-label="${LANG==="ko"?"작업":"Works"}">${sec("solo-h","개인 작업","Solo Works",solo)}${sec("collab-h","협업","Collaborations",col)}${sec("homage-h","오마주","Homage",hom)}</section>`;
+  return `<section class="works" id="works" aria-label="${LANG==="ko"?"작업":"Works"}">${sec("solo-h","개인 작업","Solo Works",solo)}${sec("collab-h","협업·오마주","Collaboration · Homage",col)}</section>`;
 }
 
 
